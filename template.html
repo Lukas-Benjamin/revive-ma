@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>REVIVE Mitarbeiter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp("__FIREBASE_CONFIG__");
+    const db = firebase.firestore();
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0f0f1a; }
+    ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 3px; }
+    body { background: #0f0f1a; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    .glass { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .glass-hover:hover { background: rgba(255,255,255,0.07); }
+    .glow { box-shadow: 0 0 28px rgba(139,92,246,0.1); }
+    .grad { background: linear-gradient(135deg, #8b5cf6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.65); cursor: pointer; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #8b5cf6 !important; }
+    select option { background: #1e1b2e; color: #e2e8f0; }
+    @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn { from{opacity:0}to{opacity:1} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .up { animation: up .2s ease; }
+    .pill { display:inline-flex; align-items:center; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+    .toggle { width: 36px; height: 20px; border-radius: 10px; position: relative; cursor: pointer; transition: background .2s; border: none; }
+    .toggle::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .2s; }
+    .toggle.on::after { transform: translateX(16px); }
+    .modal-overlay { animation: fadeIn .15s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ─── Icons ───────────────────────────────────────────────────────────────────
+const SI = ({ p, size=16, stroke=2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round">
+    {[].concat(p).map((d,i) => <path key={i} d={d}/>)}
+  </svg>
+);
+const IC = {
+  plus:      "M12 5v14M5 12h14",
+  edit:      ["M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5","M17.586 3.586a2 2 0 012.828 2.828L12 15l-4 1 1-4 8.586-8.586z"],
+  trash:     ["M3 6h18","M19 6l-1 14H6L5 6","M8 6V4h8v2"],
+  x:         "M18 6L6 18M6 6l12 12",
+  check:     "M20 6L9 17l-5-5",
+  chevDown:  "M6 9l6 6 6-6",
+  chevLeft:  "M15 18l-6-6 6-6",
+  logout:    "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1",
+  users:     ["M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2","M9 11a4 4 0 100-8 4 4 0 000 8","M23 21v-2a4 4 0 00-3-3.87","M16 3.13a4 4 0 010 7.75"],
+  person:    ["M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2","M12 11a4 4 0 100-8 4 4 0 000 8"],
+  layers:    ["M12 2L2 7l10 5 10-5-10-5","M2 17l10 5 10-5","M2 12l10 5 10-5"],
+  calendar:  ["M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"],
+  chart:     "M3 3v18h18M7 16l4-4 4 4 4-5",
+  cog:       ["M12 15a3 3 0 100-6 3 3 0 000 6","M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"],
+  zap:       "M13 2L3 14h9l-1 8 10-12h-9l1-8",
+  send:      ["M22 2L11 13","M22 2L15 22 11 13 2 9 22 2"],
+  download:  "M3 17v3h18v-3M12 3v11m-4-4l4 4 4-4",
+  upload:    "M3 17v3h18v-3M12 15V4m4 4l-4-4-4 4",
+  lock:      ["M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2z","M17 11V7a5 5 0 00-10 0v4"],
+  eye:       ["M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z","M12 9a3 3 0 100 6 3 3 0 000-6z"],
+  eyeOff:    "M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22",
+  warn:      ["M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z","M12 9v4M12 17h.01"],
+};
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+const genId   = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const today   = () => new Date().toISOString().split('T')[0];
+const fmtDe   = d => { if (!d) return ''; const [y,m,dd] = d.split('-'); return `${dd}.${m}.${y}`; };
+const loadJSON = (key, fb) => { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fb; } catch { return fb; } };
+const initials = n => (n||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
+
+// ─── Data Model ───────────────────────────────────────────────────────────────
+const DEFAULT_MA = () => ({ personen:[], gruppen:[], vorlagen:[], schichten:[] });
+const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
+const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+const ToastContainer = ({ toasts }) => (
+  <div style={{position:'fixed',bottom:20,right:20,zIndex:200,display:'flex',flexDirection:'column',gap:8,pointerEvents:'none'}}>
+    {toasts.map(t => (
+      <div key={t.id} className="up px-4 py-2.5 rounded-xl text-sm font-semibold shadow-xl"
+        style={{ background: t.type==='error'?'rgba(239,68,68,0.92)':t.type==='warn'?'rgba(245,158,11,0.92)':'rgba(16,185,129,0.92)', color:'#fff', pointerEvents:'auto' }}>
+        {t.msg}
+      </div>
+    ))}
+  </div>
+);
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+const Modal = ({ title, onClose, children, wide=false }) => {
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+  return (
+    <div className="modal-overlay" style={{position:'fixed',inset:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',background:'rgba(0,0,0,0.75)'}}
+      onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
+      <div className={`glass rounded-2xl glow w-full ${wide?'max-w-2xl':'max-w-md'}`}
+        style={{maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4" style={{borderBottom:'1px solid rgba(255,255,255,0.08)',position:'sticky',top:0,background:'rgba(15,15,26,0.97)',zIndex:10}}>
+          <h3 className="font-semibold text-slate-200 text-sm">{title}</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-all"><SI p={IC.x} size={15}/></button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Color Picker ─────────────────────────────────────────────────────────────
+const ColorPicker = ({ value, onChange }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {SWATCH.map(c => (
+      <button key={c} type="button" onClick={() => onChange(c)}
+        className="w-6 h-6 rounded-full flex-shrink-0 transition-all hover:scale-110"
+        style={{ background:c, outline:value===c?`2px solid ${c}`:'2px solid transparent', outlineOffset:'2px' }}/>
+    ))}
+    <label className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center bg-white/10 border border-white/20 cursor-pointer hover:bg-white/20 relative overflow-hidden" title="Eigene Farbe">
+      <span className="text-slate-400 text-xs">+</span>
+      <input type="color" value={value} onChange={e=>onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
+    </label>
+  </div>
+);
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+const Avatar = ({ name, farbe, size=32 }) => (
+  <div style={{width:size,height:size,borderRadius:'50%',background:farbe||'#8b5cf6',display:'flex',alignItems:'center',justifyContent:'center',fontSize:Math.round(size*0.36),fontWeight:700,color:'#fff',flexShrink:0,letterSpacing:'-0.5px'}}>
+    {initials(name)}
+  </div>
+);
+
+// ─── SyncDot ──────────────────────────────────────────────────────────────────
+const SyncDot = ({ state }) => {
+  const MAP = { connecting:['#64748b','Verbinden…'], synced:['#10b981','Sync OK'], saving:['#f59e0b','Speichern…'], error:['#ef4444','Offline'] };
+  const [col, label] = MAP[state] || MAP.connecting;
+  return (
+    <div className="flex items-center gap-1" title={label}>
+      <span style={{width:7,height:7,borderRadius:'50%',background:col,display:'inline-block',
+        boxShadow:state==='synced'?`0 0 5px ${col}99`:'none',
+        animation:state==='saving'?'pulse 1s infinite':'none'}}/>
+      <span className="text-slate-600 text-xs hidden sm:inline">{label}</span>
+    </div>
+  );
+};
+
+// ─── inp helper ──────────────────────────────────────────────────────────────
+const INP = "bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 transition-all";
+const INP_SM = "bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 transition-all";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PERSONEN VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const PersonenView = ({ ma, onChange, toast }) => {
+  const [modal, setModal] = useState(null);
+  const [form,  setForm]  = useState({ name:'', farbe:'#8b5cf6', gruppeId:'' });
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const openAdd  = () => { setForm({ name:'', farbe:MA_COLORS[ma.personen.length % MA_COLORS.length], gruppeId:'' }); setModal('add'); };
+  const openEdit = p => { setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'' }); setModal({ mode:'edit', id:p.id }); };
+
+  const save = () => {
+    if (!form.name.trim()) return;
+    if (modal === 'add') {
+      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name:form.name.trim(), farbe:form.farbe, gruppeId:form.gruppeId }] }));
+      toast('Person hinzugefügt');
+    } else {
+      onChange(m => ({ ...m, personen: m.personen.map(p => p.id===modal.id ? { ...p, name:form.name.trim(), farbe:form.farbe, gruppeId:form.gruppeId } : p) }));
+      toast('Person gespeichert');
+    }
+    setModal(null);
+  };
+
+  const del = p => {
+    onChange(m => ({ ...m, personen: m.personen.filter(x => x.id!==p.id) }));
+    toast('Person entfernt', 'warn');
+  };
+
+  return (
+    <div className="space-y-5 up">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold grad">Personen</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{ma.personen.length} Mitarbeiter</p>
+        </div>
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          <SI p={IC.plus} size={13}/> Person
+        </button>
+      </div>
+
+      {ma.personen.length === 0 ? (
+        <div className="glass rounded-2xl py-16 text-center">
+          <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
+          <button onClick={openAdd} className="mt-2 text-violet-400 hover:text-violet-300 text-sm">Person hinzufügen</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {ma.personen.map(p => {
+            const gruppe = ma.gruppen.find(g => g.id===p.gruppeId);
+            return (
+              <div key={p.id} className="glass glass-hover rounded-2xl p-4 flex items-center gap-3">
+                <Avatar name={p.name} farbe={p.farbe}/>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-200 text-sm">{p.name}</div>
+                  {gruppe && <div className="text-xs mt-0.5" style={{color:gruppe.farbe}}>{gruppe.name}</div>}
+                </div>
+                <button onClick={() => openEdit(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
+                <button onClick={() => del(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal==='add'?'Person hinzufügen':'Person bearbeiten'} onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
+              <input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Vorname Nachname"
+                className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&save()}/>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
+              <select value={form.gruppeId} onChange={e=>set('gruppeId',e.target.value)} className={"w-full "+INP}>
+                <option value="">— Keine Gruppe —</option>
+                {ma.gruppen.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-2">Farbe</label>
+              <ColorPicker value={form.farbe} onChange={c=>set('farbe',c)}/>
+              <div className="mt-3 flex items-center gap-2">
+                <Avatar name={form.name||'?'} farbe={form.farbe} size={38}/>
+                <span className="text-slate-400 text-sm">{form.name||'Vorschau'}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={save} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all">Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-sm transition-all">Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRUPPEN VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const GruppenView = ({ ma, onChange, toast }) => {
+  const [modal,      setModal]      = useState(null);
+  const [form,       setForm]       = useState({ name:'', farbe:'#6366f1' });
+  const [newDienst,  setNewDienst]  = useState({});
+
+  const openAdd  = () => { setForm({ name:'', farbe:MA_COLORS[ma.gruppen.length % MA_COLORS.length] }); setModal('add'); };
+  const openEdit = g => { setForm({ name:g.name, farbe:g.farbe }); setModal({ mode:'edit', id:g.id }); };
+
+  const saveGruppe = () => {
+    if (!form.name.trim()) return;
+    if (modal==='add') {
+      onChange(m => ({ ...m, gruppen: [...m.gruppen, { id:genId(), name:form.name.trim(), farbe:form.farbe, dienste:[] }] }));
+      toast('Gruppe erstellt');
+    } else {
+      onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===modal.id ? { ...g, name:form.name.trim(), farbe:form.farbe } : g) }));
+      toast('Gruppe gespeichert');
+    }
+    setModal(null);
+  };
+
+  const delGruppe = g => {
+    onChange(m => ({ ...m, gruppen: m.gruppen.filter(x=>x.id!==g.id), personen: m.personen.map(p=>p.gruppeId===g.id?{...p,gruppeId:''}:p) }));
+    toast('Gruppe gelöscht', 'warn');
+  };
+
+  const addDienst = gid => {
+    const name = (newDienst[gid]||'').trim();
+    if (!name) return;
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:[...(g.dienste||[]), { id:genId(), name }] } : g) }));
+    setNewDienst(p=>({...p,[gid]:''}));
+    toast('Dienst hinzugefügt');
+  };
+
+  const delDienst = (gid, did) => {
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).filter(d=>d.id!==did) } : g) }));
+  };
+
+  return (
+    <div className="space-y-5 up">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold grad">Gruppen &amp; Dienste</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{ma.gruppen.length} Gruppen</p>
+        </div>
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          <SI p={IC.plus} size={13}/> Gruppe
+        </button>
+      </div>
+
+      {ma.gruppen.length===0 ? (
+        <div className="glass rounded-2xl py-16 text-center">
+          <div className="text-slate-400 font-medium mb-1">Noch keine Gruppen</div>
+          <button onClick={openAdd} className="mt-2 text-violet-400 hover:text-violet-300 text-sm">Erste Gruppe erstellen</button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {ma.gruppen.map(g => {
+            const members = ma.personen.filter(p=>p.gruppeId===g.id);
+            return (
+              <div key={g.id} className="glass rounded-2xl p-4 glow">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{background:g.farbe}}/>
+                  <span className="font-semibold text-slate-200">{g.name}</span>
+                  <span className="text-slate-600 text-xs">{members.length} Mitarbeiter · {(g.dienste||[]).length} Dienste</span>
+                  <div className="ml-auto flex gap-1">
+                    <button onClick={() => openEdit(g)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
+                    <button onClick={() => delGruppe(g)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+                  </div>
+                </div>
+                <div className="space-y-1.5 mb-3">
+                  {(g.dienste||[]).map(d => (
+                    <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)'}}>
+                      <span className="text-slate-300 text-sm flex-1">{d.name}</span>
+                      <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input value={newDienst[g.id]||''} onChange={e=>setNewDienst(p=>({...p,[g.id]:e.target.value}))}
+                    placeholder="Neuer Dienst…" className={INP_SM+" flex-1"}
+                    onKeyDown={e=>e.key==='Enter'&&addDienst(g.id)}/>
+                  <button onClick={() => addDienst(g.id)} className="px-3 py-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/35 text-violet-400 text-xs font-semibold transition-all">+ Dienst</button>
+                </div>
+                {members.length>0 && (
+                  <div className="flex flex-wrap gap-1 mt-3 pt-3" style={{borderTop:'1px solid rgba(255,255,255,0.05)'}}>
+                    {members.map(p=><span key={p.id} className="pill" style={{background:p.farbe+'22',color:p.farbe}}>{p.name}</span>)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal==='add'?'Gruppe erstellen':'Gruppe bearbeiten'} onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
+              <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
+                placeholder="Gruppenname" className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&saveGruppe()}/>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-2">Farbe</label>
+              <ColorPicker value={form.farbe} onChange={c=>setForm(p=>({...p,farbe:c}))}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveGruppe} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VORLAGEN VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const VorlagenView = ({ ma, onChange, toast }) => {
+  const [modal, setModal] = useState(null);
+  const [form,  setForm]  = useState({ name:'', slots:[] });
+
+  const openAdd  = () => { setForm({ name:'', slots:[] }); setModal('add'); };
+  const openEdit = v => { setForm({ name:v.name, slots:v.slots.map(s=>({...s})) }); setModal({ mode:'edit', id:v.id }); };
+
+  const addSlot = () => {
+    const g = ma.gruppen[0]; if (!g) return;
+    const d = (g.dienste||[])[0];
+    setForm(p => ({ ...p, slots:[...p.slots, { id:genId(), gruppeId:g.id, dienstId:d?.id||'', doppelt:false }] }));
+  };
+
+  const updSlot = (sid, key, val) => setForm(p => ({ ...p, slots:p.slots.map(s=>s.id===sid?{...s,[key]:val}:s) }));
+  const remSlot = sid => setForm(p => ({ ...p, slots:p.slots.filter(s=>s.id!==sid) }));
+
+  const save = () => {
+    if (!form.name.trim()) return;
+    if (modal==='add') {
+      onChange(m => ({ ...m, vorlagen:[...m.vorlagen, { id:genId(), name:form.name.trim(), slots:form.slots }] }));
+      toast('Vorlage erstellt');
+    } else {
+      onChange(m => ({ ...m, vorlagen:m.vorlagen.map(v=>v.id===modal.id?{...v,name:form.name.trim(),slots:form.slots}:v) }));
+      toast('Vorlage gespeichert');
+    }
+    setModal(null);
+  };
+
+  const del = v => { onChange(m => ({ ...m, vorlagen:m.vorlagen.filter(x=>x.id!==v.id) })); toast('Vorlage gelöscht','warn'); };
+
+  return (
+    <div className="space-y-5 up">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold grad">Vorlagen</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Wiederverwendbare Dienstplan-Vorlagen</p>
+        </div>
+        <button onClick={openAdd} disabled={ma.gruppen.length===0}
+          className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          <SI p={IC.plus} size={13}/> Vorlage
+        </button>
+      </div>
+
+      {ma.gruppen.length===0 && (
+        <div className="glass rounded-2xl p-4 text-slate-500 text-sm text-center">
+          Erstelle zuerst <strong className="text-slate-400">Gruppen &amp; Dienste</strong>.
+        </div>
+      )}
+
+      {ma.vorlagen.length===0 && ma.gruppen.length>0 && (
+        <div className="glass rounded-2xl py-16 text-center">
+          <div className="text-slate-400 font-medium mb-1">Noch keine Vorlagen</div>
+          <button onClick={openAdd} className="mt-2 text-violet-400 hover:text-violet-300 text-sm">Vorlage erstellen</button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {ma.vorlagen.map(v => (
+          <div key={v.id} className="glass rounded-2xl p-4 glow">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="font-semibold text-slate-200">{v.name}</span>
+              <span className="text-slate-600 text-xs">{v.slots.length} Slots</span>
+              <div className="ml-auto flex gap-1">
+                <button onClick={() => openEdit(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
+                <button onClick={() => del(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {v.slots.map(s => {
+                const g = ma.gruppen.find(x=>x.id===s.gruppeId);
+                const d = (g?.dienste||[]).find(x=>x.id===s.dienstId);
+                return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {modal && (
+        <Modal title={modal==='add'?'Vorlage erstellen':'Vorlage bearbeiten'} onClose={() => setModal(null)} wide>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
+              <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
+                placeholder="z. B. Sonntagsgottesdienst" className={"w-full "+INP} autoFocus/>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-2">Slots</label>
+              <div className="space-y-2">
+                {form.slots.map(s => {
+                  const g = ma.gruppen.find(x=>x.id===s.gruppeId);
+                  return (
+                    <div key={s.id} className="flex gap-2 items-center">
+                      <select value={s.gruppeId} onChange={e=>{
+                          const g2=ma.gruppen.find(x=>x.id===e.target.value);
+                          updSlot(s.id,'gruppeId',e.target.value);
+                          if(g2?.dienste?.[0]) updSlot(s.id,'dienstId',g2.dienste[0].id);
+                        }} className={INP_SM+" flex-1"}>
+                        {ma.gruppen.map(g2=><option key={g2.id} value={g2.id}>{g2.name}</option>)}
+                      </select>
+                      <select value={s.dienstId} onChange={e=>updSlot(s.id,'dienstId',e.target.value)} className={INP_SM+" flex-1"}>
+                        <option value="">— Dienst —</option>
+                        {(g?.dienste||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                      <button type="button" onClick={() => updSlot(s.id,'doppelt',!s.doppelt)} title="Doppelt besetzen"
+                        className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${s.doppelt?'bg-amber-600/30 text-amber-400':'bg-white/5 text-slate-600'}`}>×2</button>
+                      <button type="button" onClick={() => remSlot(s.id)} className="text-slate-600 hover:text-red-400 transition-all"><SI p={IC.x} size={13}/></button>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={addSlot} disabled={ma.gruppen.length===0}
+                className="mt-2 flex items-center gap-1 text-violet-400 hover:text-violet-300 text-xs transition-all">
+                <SI p={IC.plus} size={12}/> Slot hinzufügen
+              </button>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={save} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DIENSTPLAN VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const DienstplanView = ({ ma, onChange, toast }) => {
+  const [view,         setView]        = useState('list');   // 'list' | 'detail'
+  const [modal,        setModal]       = useState(null);     // 'create'|'assign'|'wish'|'share'|'addslot'
+  const [selSchichtId, setSelSchichtId]= useState(null);
+  const [selSlot,      setSelSlot]     = useState(null);     // slot obj + isSecond
+  const [wishPid,      setWishPid]     = useState('');
+  const [wishForm,     setWishForm]    = useState({});
+  const [shareText,    setShareText]   = useState('');
+  const [createForm,   setCreateForm]  = useState({ datum:today(), titel:'', vorlageId:'' });
+
+  const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
+  const sorted     = useMemo(() => [...ma.schichten].sort((a,b)=>b.datum.localeCompare(a.datum)), [ma.schichten]);
+
+  // ── helpers ──
+  const updateSchicht = (id, updater) => {
+    onChange(m => ({ ...m, schichten: m.schichten.map(s => s.id===id ? (typeof updater==='function'?updater(s):{...s,...updater}) : s) }));
+  };
+
+  const createSchicht = () => {
+    if (!createForm.datum) return;
+    const vorlage = ma.vorlagen.find(v=>v.id===createForm.vorlageId);
+    const slots = vorlage ? vorlage.slots.map(s=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:s.doppelt||false, personId:'', personId2:'' })) : [];
+    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false };
+    onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
+    setSelSchichtId(neu.id); setView('detail'); setModal(null);
+    toast('Schicht erstellt');
+  };
+
+  const deleteSchicht = id => {
+    onChange(m => ({ ...m, schichten:m.schichten.filter(s=>s.id!==id) }));
+    setView('list'); setSelSchichtId(null);
+    toast('Schicht gelöscht','warn');
+  };
+
+  const togglePublish = () => {
+    if (!selSchicht) return;
+    updateSchicht(selSchicht.id, s=>({ ...s, veroeffentlicht:!s.veroeffentlicht }));
+    toast(selSchicht.veroeffentlicht?'Unveröffentlicht':'Veröffentlicht ✓');
+  };
+
+  const assignPerson = (slotId, personId, isSecond) => {
+    if (!selSchicht) return;
+    const field = isSecond ? 'personId2' : 'personId';
+    updateSchicht(selSchicht.id, s => ({
+      ...s, slots: s.slots.map(sl => sl.id===slotId ? { ...sl, [field]: sl[field]===personId?'':personId } : sl)
+    }));
+    setModal('detail_view');
+  };
+
+  const addSchSlot = () => {
+    if (!selSchicht) return;
+    const g = ma.gruppen[0]; if (!g) return;
+    const d = (g.dienste||[])[0];
+    updateSchicht(selSchicht.id, s => ({ ...s, slots:[...s.slots, { id:genId(), gruppeId:g.id, dienstId:d?.id||'', doppelt:false, personId:'', personId2:'' }] }));
+    toast('Slot hinzugefügt');
+  };
+
+  const remSchSlot = slotId => {
+    if (!selSchicht) return;
+    updateSchicht(selSchicht.id, s=>({ ...s, slots:s.slots.filter(sl=>sl.id!==slotId) }));
+  };
+
+  const saveWishes = () => {
+    if (!selSchicht) return;
+    const other = (selSchicht.wuensche||[]).filter(w=>w.personId!==wishPid);
+    const mine  = Object.entries(wishForm).filter(([,v])=>v).map(([slotId,art])=>({ personId:wishPid, slotId, art }));
+    updateSchicht(selSchicht.id, s=>({ ...s, wuensche:[...other,...mine] }));
+    toast('Wünsche gespeichert'); setModal('detail_view');
+  };
+
+  const runAuto = () => {
+    if (!selSchicht) return;
+    const counts = {};
+    ma.personen.forEach(p=>{ counts[p.id]=0; });
+    ma.schichten.forEach(s => s.slots.forEach(sl => {
+      if(sl.personId)  counts[sl.personId]  = (counts[sl.personId]||0)+1;
+      if(sl.personId2) counts[sl.personId2] = (counts[sl.personId2]||0)+1;
+    }));
+
+    const usedNow = new Set();
+    const newSlots = selSchicht.slots.map(sl => {
+      const eligible = ma.personen.filter(p => {
+        if (p.gruppeId !== sl.gruppeId) return false;
+        const w = (selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
+        return w?.art !== 'wunschfrei';
+      });
+      const pick = (excl) => {
+        const wunsch = eligible.filter(p=>{ const w=(selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id); return w?.art==='wunschdienst'&&!excl.has(p.id); });
+        const rest   = eligible.filter(p=>!excl.has(p.id)&&!wunsch.find(x=>x.id===p.id));
+        const pool   = [...wunsch, ...rest.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0))];
+        if (!pool.length) return '';
+        const p = pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
+      };
+      const p1 = pick(new Set(usedNow)); if(p1) usedNow.add(p1);
+      const p2 = sl.doppelt ? pick(new Set(usedNow)) : ''; if(p2) usedNow.add(p2);
+      return { ...sl, personId:p1, personId2:p2 };
+    });
+    updateSchicht(selSchicht.id, s=>({ ...s, slots:newSlots }));
+    toast('Auto-Einteilung abgeschlossen ⚡');
+  };
+
+  const buildShareText = s => {
+    const lines = [`📅 *${s.titel||fmtDe(s.datum)}* — ${fmtDe(s.datum)}\n`];
+    s.slots.forEach(sl => {
+      const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
+      const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+      const p1 = ma.personen.find(x=>x.id===sl.personId);
+      const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
+      const names = [p1?.name,p2?.name].filter(Boolean).join(' & ') || '—';
+      lines.push(`• ${d?.name||'?'}: ${names}`);
+    });
+    return lines.join('\n');
+  };
+
+  // ── List View ──
+  if (view==='list') return (
+    <div className="space-y-5 up">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold grad">Dienstplan</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{ma.schichten.length} Schichten</p>
+        </div>
+        <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
+          className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          <SI p={IC.plus} size={13}/> Schicht
+        </button>
+      </div>
+
+      {sorted.length===0 ? (
+        <div className="glass rounded-2xl py-16 text-center">
+          <div className="text-slate-400 font-medium mb-1">Noch keine Schichten</div>
+          <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:'' }); setModal('create'); }}
+            className="mt-2 text-violet-400 hover:text-violet-300 text-sm">Erste Schicht erstellen</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map(s => {
+            const filled = s.slots.filter(sl=>sl.personId).length;
+            return (
+              <div key={s.id} className="glass glass-hover rounded-2xl p-4 cursor-pointer transition-all"
+                onClick={() => { setSelSchichtId(s.id); setView('detail'); }}>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span className="font-semibold text-slate-200 text-sm">{fmtDe(s.datum)}</span>
+                      {s.titel && <span className="text-slate-300 text-sm">{s.titel}</span>}
+                      {s.veroeffentlicht
+                        ? <span className="pill" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>✓ Veröffentlicht</span>
+                        : <span className="pill" style={{background:'rgba(100,116,139,0.15)',color:'#64748b'}}>Entwurf</span>}
+                    </div>
+                    <div className="text-slate-600 text-xs mb-2">{filled}/{s.slots.length} Slots besetzt</div>
+                    <div className="flex flex-wrap gap-1">
+                      {s.slots.slice(0,8).map(sl => {
+                        const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
+                        const p = ma.personen.find(x=>x.id===sl.personId);
+                        const col = g?.farbe||'#8b5cf6';
+                        return <span key={sl.id} className="pill" style={{background:p?col+'22':'rgba(255,255,255,0.04)',color:p?col:'#475569'}}>{p?p.name:'—'}</span>;
+                      })}
+                      {s.slots.length>8 && <span className="text-slate-600 text-xs ml-1">+{s.slots.length-8}</span>}
+                    </div>
+                  </div>
+                  <button onClick={e=>{e.stopPropagation();if(confirm('Schicht löschen?'))deleteSchicht(s.id);}}
+                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-white/5 hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-all">
+                    <SI p={IC.trash} size={12}/>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modal==='create' && (
+        <Modal title="Neue Schicht erstellen" onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Datum *</label>
+              <input type="date" value={createForm.datum} onChange={e=>setCreateForm(p=>({...p,datum:e.target.value}))} className={"w-full "+INP} autoFocus/>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Titel</label>
+              <input value={createForm.titel} onChange={e=>setCreateForm(p=>({...p,titel:e.target.value}))}
+                placeholder="z. B. Sonntagsgottesdienst" className={"w-full "+INP}
+                onKeyDown={e=>e.key==='Enter'&&createSchicht()}/>
+            </div>
+            {ma.vorlagen.length>0 && (
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Vorlage</label>
+                <select value={createForm.vorlageId} onChange={e=>setCreateForm(p=>({...p,vorlageId:e.target.value}))} className={"w-full "+INP}>
+                  <option value="">— Keine Vorlage (leere Schicht) —</option>
+                  {ma.vorlagen.map(v=><option key={v.id} value={v.id}>{v.name} ({v.slots.length} Slots)</option>)}
+                </select>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={createSchicht} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-xl text-sm">Erstellen</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+
+  // ── Detail View ──
+  if (!selSchicht) { setView('list'); return null; }
+
+  return (
+    <div className="space-y-4 up">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => setView('list')} className="w-8 h-8 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 transition-all">
+          <SI p={IC.chevLeft} size={16}/>
+        </button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-slate-100 leading-none">{fmtDe(selSchicht.datum)}{selSchicht.titel?' — '+selSchicht.titel:''}</h1>
+          <div className="text-slate-500 text-xs mt-0.5">{selSchicht.slots.filter(sl=>sl.personId).length}/{selSchicht.slots.length} Slots besetzt</div>
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={togglePublish}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selSchicht.veroeffentlicht?'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/40':'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+          {selSchicht.veroeffentlicht?'✓ Veröffentlicht':'Veröffentlichen'}
+        </button>
+        <button onClick={runAuto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-all">
+          <SI p={IC.zap} size={12}/> Auto-Einteilung
+        </button>
+        <button onClick={() => { setShareText(buildShareText(selSchicht)); setModal('share'); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition-all">
+          <SI p={IC.send} size={12}/> Teilen
+        </button>
+        <button onClick={addSchSlot} disabled={ma.gruppen.length===0}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600/20 text-violet-400 hover:bg-violet-600/30 disabled:opacity-40 transition-all">
+          <SI p={IC.plus} size={12}/> Slot
+        </button>
+      </div>
+
+      {/* Slots */}
+      <div className="space-y-2">
+        {selSchicht.slots.length===0 && (
+          <div className="glass rounded-2xl py-10 text-center text-slate-600 text-sm">
+            Keine Slots. Klicke "+ Slot" oder erstelle eine Vorlage.
+          </div>
+        )}
+        {selSchicht.slots.map(sl => {
+          const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
+          const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+          const p1 = ma.personen.find(x=>x.id===sl.personId);
+          const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
+          const col = g?.farbe||'#8b5cf6';
+          const wCount = (selSchicht.wuensche||[]).filter(w=>w.slotId===sl.id).length;
+
+          return (
+            <div key={sl.id} className="glass rounded-2xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:col}}/>
+                <span className="text-xs font-semibold text-slate-500">{g?.name||'?'}</span>
+                <span className="text-slate-700 text-xs">›</span>
+                <span className="text-xs font-semibold text-slate-300">{d?.name||'?'}</span>
+                {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>×2</span>}
+                {wCount>0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
+                <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {/* Assign P1 */}
+                <button onClick={() => { setSelSlot({...sl,isSecond:false}); setModal('assign'); }}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={p1?{background:p1.farbe+'25',color:p1.farbe,border:`1px solid ${p1.farbe}44`}:{background:'rgba(255,255,255,0.04)',color:'#475569',border:'1px solid rgba(255,255,255,0.07)'}}>
+                  {p1?<><Avatar name={p1.name} farbe={p1.farbe} size={16}/><span>{p1.name}</span></>:'+ Zuweisen'}
+                </button>
+                {/* Assign P2 */}
+                {sl.doppelt && (
+                  <button onClick={() => { setSelSlot({...sl,isSecond:true}); setModal('assign'); }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    style={p2?{background:p2.farbe+'25',color:p2.farbe,border:`1px solid ${p2.farbe}44`}:{background:'rgba(255,255,255,0.04)',color:'#475569',border:'1px solid rgba(255,255,255,0.07)'}}>
+                    {p2?<><Avatar name={p2.name} farbe={p2.farbe} size={16}/><span>{p2.name}</span></>:'+ Zuweisen (2)'}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Wünsche Section */}
+      {selSchicht.slots.length>0 && (
+        <div className="glass rounded-2xl p-4">
+          <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Wünsche bearbeiten</div>
+          <div className="flex flex-wrap gap-2">
+            {ma.personen.filter(p => ma.gruppen.some(g=>g.id===p.gruppeId&&selSchicht.slots.some(sl=>sl.gruppeId===g.id))).map(p => {
+              const myWishes = (selSchicht.wuensche||[]).filter(w=>w.personId===p.id);
+              return (
+                <button key={p.id} onClick={() => {
+                    setWishPid(p.id);
+                    const wm={};
+                    myWishes.forEach(w=>wm[w.slotId]=w.art);
+                    setWishForm(wm); setModal('wish');
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all"
+                  style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',color:'#94a3b8'}}>
+                  <Avatar name={p.name} farbe={p.farbe} size={18}/>
+                  {p.name}
+                  {myWishes.length>0&&<span style={{color:'#f59e0b',fontSize:10}}>({myWishes.length})</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Assign Modal */}
+      {modal==='assign' && selSlot && (() => {
+        const g = ma.gruppen.find(x=>x.id===selSlot.gruppeId);
+        const d = (g?.dienste||[]).find(x=>x.id===selSlot.dienstId);
+        const eligible = ma.personen.filter(p=>p.gruppeId===selSlot.gruppeId);
+        const cur = selSlot.isSecond ? selSlot.personId2 : selSlot.personId;
+        return (
+          <Modal title={`Zuweisen: ${d?.name||'?'}`} onClose={() => setModal(null)}>
+            <div className="space-y-1.5">
+              {eligible.length===0&&<div className="text-slate-500 text-sm py-4 text-center">Keine Personen in dieser Gruppe.</div>}
+              {eligible.map(p => {
+                const sel = cur===p.id;
+                const wish = (selSchicht.wuensche||[]).find(w=>w.personId===p.id&&w.slotId===selSlot.id);
+                return (
+                  <button key={p.id} onClick={() => assignPerson(selSlot.id,p.id,selSlot.isSecond)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
+                    style={sel?{background:p.farbe+'30',border:`1px solid ${p.farbe}55`}:{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.07)'}}>
+                    <Avatar name={p.name} farbe={p.farbe} size={34}/>
+                    <div className="flex-1 text-left">
+                      <div className="font-semibold text-sm" style={{color:sel?p.farbe:'#e2e8f0'}}>{p.name}</div>
+                      {wish&&<div className="text-xs" style={{color:wish.art==='wunschdienst'?'#10b981':'#ef4444'}}>{wish.art==='wunschdienst'?'✓ Wunschdienst':'✕ Wunschfrei'}</div>}
+                    </div>
+                    {sel&&<SI p={IC.check} size={14} stroke={3}/>}
+                  </button>
+                );
+              })}
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* Wish Modal */}
+      {modal==='wish' && wishPid && (() => {
+        const person = ma.personen.find(p=>p.id===wishPid);
+        const relSlots = selSchicht.slots.filter(sl=>sl.gruppeId===person?.gruppeId);
+        return (
+          <Modal title={`Wünsche: ${person?.name||'?'}`} onClose={() => setModal(null)}>
+            <div className="space-y-3">
+              {relSlots.length===0&&<div className="text-slate-500 text-sm">Keine relevanten Slots.</div>}
+              {relSlots.map(sl => {
+                const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
+                const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+                const art = wishForm[sl.id]||'';
+                return (
+                  <div key={sl.id} className="flex items-center gap-2">
+                    <span className="flex-1 text-sm text-slate-300 truncate">{d?.name||'?'}</span>
+                    {['','wunschdienst','wunschfrei'].map(v=>(
+                      <button key={v} onClick={() => setWishForm(p=>({...p,[sl.id]:v}))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${art===v?v==='wunschdienst'?'bg-emerald-900/40 text-emerald-400':v==='wunschfrei'?'bg-red-900/30 text-red-400':'bg-violet-600/25 text-violet-400':'bg-white/5 text-slate-600 hover:bg-white/10'}`}>
+                        {v===''?'Egal':v==='wunschdienst'?'✓ Wunsch':'✕ Frei'}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+              <div className="flex gap-2 pt-2">
+                <button onClick={saveWishes} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* Share Modal */}
+      {modal==='share' && (
+        <Modal title="Schicht teilen" onClose={() => setModal(null)}>
+          <div className="space-y-3">
+            <textarea value={shareText} onChange={e=>setShareText(e.target.value)} rows={10}
+              className={"w-full font-mono text-xs resize-none "+INP}/>
+            <button onClick={() => navigator.clipboard?.writeText(shareText).then(()=>toast('Kopiert!')).catch(()=>alert(shareText))}
+              className="w-full py-2.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 text-violet-400 text-sm font-semibold transition-all">
+              📋 In Zwischenablage kopieren
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATISTIK VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const StatistikView = ({ ma }) => {
+  const stats = useMemo(() => {
+    return ma.personen.map(p => {
+      let total = 0;
+      const byDienst = {};
+      ma.schichten.forEach(s => s.slots.forEach(sl => {
+        const hit = sl.personId===p.id || sl.personId2===p.id;
+        if (!hit) return;
+        total++;
+        const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
+        const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+        const key = d?.name||'?';
+        byDienst[key] = (byDienst[key]||0)+1;
+      }));
+      return { p, total, byDienst };
+    }).sort((a,b) => b.total-a.total);
+  }, [ma]);
+
+  const maxVal = stats.length ? Math.max(...stats.map(s=>s.total), 1) : 1;
+
+  return (
+    <div className="space-y-5 up">
+      <div>
+        <h1 className="text-xl font-bold grad">Statistik</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Einsätze pro Mitarbeiter</p>
+      </div>
+      {stats.length===0 ? (
+        <div className="glass rounded-2xl py-16 text-center text-slate-600">Noch keine Daten</div>
+      ) : (
+        <div className="space-y-3">
+          {stats.map(({ p, total, byDienst }) => {
+            const gruppe = ma.gruppen.find(g=>g.id===p.gruppeId);
+            const pct = Math.round((total/maxVal)*100);
+            return (
+              <div key={p.id} className="glass rounded-2xl p-4 glow">
+                <div className="flex items-center gap-3 mb-2">
+                  <Avatar name={p.name} farbe={p.farbe} size={36}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-200 text-sm">{p.name}</div>
+                    {gruppe&&<div className="text-xs" style={{color:gruppe.farbe}}>{gruppe.name}</div>}
+                  </div>
+                  <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden mb-2">
+                  <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:p.farbe}}/>
+                </div>
+                {Object.keys(byDienst).length>0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(byDienst).map(([k,v])=>(
+                      <span key={k} className="pill" style={{background:'rgba(255,255,255,0.05)',color:'#94a3b8'}}>{k}: {v}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EINSTELLUNGEN VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const EinstellungenView = ({ ma, onChange, toast }) => {
+  const [pin,    setPin]    = useState('');
+  const [pin2,   setPin2]   = useState('');
+  const [showPw, setShowPw] = useState(false);
+
+  const savePin = async () => {
+    if (!pin) { toast('Bitte PIN eingeben','error'); return; }
+    if (pin !== pin2) { toast('PINs stimmen nicht überein','error'); return; }
+    try {
+      await db.collection('config').doc('auth').set({ adminPin:pin }, { merge:true });
+      toast('PIN gespeichert ✓');
+      setPin(''); setPin2('');
+    } catch { toast('Fehler beim Speichern','error'); }
+  };
+
+  const exportJSON = () => {
+    const blob = new Blob([JSON.stringify(ma, null, 2)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `revive-ma-${today()}.json`;
+    a.click();
+    toast('Export heruntergeladen');
+  };
+
+  const importJSON = e => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (!d.personen||!d.gruppen) throw new Error();
+        onChange(d); toast('Daten importiert ✓');
+      } catch { toast('Ungültige JSON-Datei','error'); }
+    };
+    r.readAsText(f); e.target.value='';
+  };
+
+  const resetAll = () => {
+    if (!confirm('Alle Mitarbeiterdaten wirklich zurücksetzen?\n\nDies kann nicht rückgängig gemacht werden.')) return;
+    onChange(DEFAULT_MA()); toast('Zurückgesetzt','warn');
+  };
+
+  return (
+    <div className="space-y-5 up max-w-xl">
+      <div>
+        <h1 className="text-xl font-bold grad">Einstellungen</h1>
+        <p className="text-slate-500 text-sm mt-0.5">App-Konfiguration & Datenverwaltung</p>
+      </div>
+
+      {/* PIN */}
+      <div className="glass rounded-2xl p-5 glow space-y-3">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5"><SI p={IC.lock} size={11}/> Admin-PIN ändern</p>
+        <div className="relative">
+          <input type={showPw?'text':'password'} value={pin} onChange={e=>setPin(e.target.value)}
+            placeholder="Neuer PIN" className={"w-full pr-10 "+INP}/>
+          <button type="button" onClick={() => setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+            <SI p={showPw?IC.eyeOff:IC.eye} size={14}/>
+          </button>
+        </div>
+        <input type={showPw?'text':'password'} value={pin2} onChange={e=>setPin2(e.target.value)}
+          placeholder="PIN bestätigen" className={"w-full "+INP}
+          onKeyDown={e=>e.key==='Enter'&&savePin()}/>
+        <button onClick={savePin} className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-all">PIN speichern</button>
+      </div>
+
+      {/* Backup */}
+      <div className="glass rounded-2xl p-5 glow space-y-3">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Datensicherung</p>
+        <div className="flex gap-2">
+          <button onClick={exportJSON} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-semibold transition-all border border-white/10">
+            <SI p={IC.download} size={13}/> Exportieren
+          </button>
+          <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-semibold transition-all border border-white/10 cursor-pointer">
+            <SI p={IC.upload} size={13}/> Importieren
+            <input type="file" accept=".json" onChange={importJSON} className="hidden"/>
+          </label>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="glass rounded-2xl p-5">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Datenübersicht</p>
+        {[['Personen',ma.personen.length],['Gruppen',ma.gruppen.length],['Vorlagen',ma.vorlagen.length],['Schichten',ma.schichten.length]].map(([k,v])=>(
+          <div key={k} className="flex items-center justify-between py-2" style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+            <span className="text-slate-400 text-sm">{k}</span>
+            <span className="font-bold text-violet-400">{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Danger Zone */}
+      <div className="glass rounded-2xl p-5" style={{borderColor:'rgba(239,68,68,0.2)'}}>
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3 text-red-500/70">Gefahrenzone</p>
+        <button onClick={resetAll} className="w-full py-2.5 rounded-xl text-red-400 text-sm font-semibold transition-all" style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)'}}>
+          Alle Daten zurücksetzen
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════════════════════════════════════
+const DEFAULT_PIN = '0207';
+const LoginScreen = ({ onLogin }) => {
+  const [pw,       setPw]       = useState('');
+  const [err,      setErr]      = useState(false);
+  const [showPw,   setShowPw]   = useState(false);
+  const [adminPin, setAdminPin] = useState(DEFAULT_PIN);
+  const [ready,    setReady]    = useState(false);
+
+  useEffect(() => {
+    db.collection('config').doc('auth').get()
+      .then(snap => { const p=snap.data()?.adminPin; if(p) setAdminPin(p); setReady(true); })
+      .catch(() => setReady(true));
+  }, []);
+
+  const tryAdmin = () => {
+    if (!ready) return;
+    if (pw===adminPin) { onLogin('admin'); }
+    else { setErr(true); setPw(''); }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-sm space-y-6 up">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-black text-white text-3xl mx-auto mb-4"
+            style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>R</div>
+          <div className="text-white font-bold text-xl tracking-tight">REVIVE Mitarbeiter</div>
+          <div className="text-slate-500 text-sm mt-1">Dienstplan &amp; Team-Verwaltung</div>
+          {!ready && <div className="text-slate-600 text-xs mt-2" style={{animation:'pulse 1.5s infinite'}}>Verbinde…</div>}
+        </div>
+        <div className="glass rounded-2xl p-6 glow space-y-3">
+          <button onClick={() => onLogin('viewer')}
+            className="w-full py-3 rounded-xl text-sm font-semibold transition-all bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10">
+            Viewer – nur lesen
+          </button>
+          <div className="space-y-2">
+            <div className="relative">
+              <input value={pw} onChange={e=>{setPw(e.target.value);setErr(false);}} onKeyDown={e=>e.key==='Enter'&&tryAdmin()}
+                placeholder="Admin-PIN" autoComplete="off" autoCorrect="off" spellCheck="false"
+                type={showPw?'text':'password'}
+                className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 text-sm pr-12 transition-all ${err?'border-red-500/60':'border-white/10'}`}
+                autoFocus/>
+              <button type="button" onClick={() => setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                <SI p={showPw?IC.eyeOff:IC.eye} size={15}/>
+              </button>
+            </div>
+            {err && <p className="text-red-400 text-xs px-1">Falsches Passwort</p>}
+            <button onClick={tryAdmin} disabled={!ready}
+              className="w-full py-3 rounded-xl text-sm font-semibold transition-all text-white disabled:opacity-50"
+              style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>
+              {ready?'Als Admin anmelden':'Verbinde…'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// APP
+// ═══════════════════════════════════════════════════════════════════════════════
+const App = () => {
+  const [role,      setRole]      = useState(() => localStorage.getItem('rma-role')||null);
+  const [ma,        setMa]        = useState(() => loadJSON('rma-data', DEFAULT_MA()));
+  const [page,      setPage]      = useState('dienstplan');
+  const [syncState, setSyncState] = useState('connecting');
+  const [toasts,    setToasts]    = useState([]);
+
+  const isAdmin = role==='admin';
+
+  const toast = (msg, type='success') => {
+    const id = genId();
+    setToasts(p=>[...p, { id, msg, type }]);
+    setTimeout(() => setToasts(p=>p.filter(t=>t.id!==id)), 3000);
+  };
+
+  const login  = r => { setRole(r); localStorage.setItem('rma-role',r); };
+  const logout = () => { setRole(null); localStorage.removeItem('rma-role'); setPage('dienstplan'); };
+
+  // Firebase Sync
+  const writeMa = data => {
+    setSyncState('saving');
+    localStorage.setItem('rma-data', JSON.stringify(data));
+    db.collection('revive').doc('ma').set({ data })
+      .then(()=>setSyncState('synced'))
+      .catch(()=>setSyncState('error'));
+  };
+
+  useEffect(() => {
+    setSyncState('connecting');
+    const unsub = db.collection('revive').doc('ma').onSnapshot(
+      { includeMetadataChanges:true },
+      snap => {
+        if (snap.metadata.hasPendingWrites) return;
+        const data = snap.data()?.data;
+        if (data) { localStorage.setItem('rma-data',JSON.stringify(data)); setMa(data); }
+        setSyncState('synced');
+      },
+      () => setSyncState('error')
+    );
+    return () => unsub();
+  }, []);
+
+  const updateMa = updater => {
+    const next = typeof updater==='function' ? updater(ma) : updater;
+    setMa(next);
+    writeMa(next);
+  };
+
+  if (!role) return <LoginScreen onLogin={login}/>;
+
+  const TABS = [
+    { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
+    { id:'personen',   label:'Personen',   icon:IC.person   },
+    { id:'gruppen',    label:'Gruppen',    icon:IC.users    },
+    { id:'vorlagen',   label:'Vorlagen',   icon:IC.layers   },
+    { id:'statistik',  label:'Statistik',  icon:IC.chart    },
+    ...(isAdmin ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog }] : []),
+  ];
+
+  return (
+    <div className="min-h-screen">
+      <ToastContainer toasts={toasts}/>
+      <header style={{background:'rgba(15,15,26,0.95)',backdropFilter:'blur(20px)',borderBottom:'1px solid rgba(255,255,255,0.07)',position:'sticky',top:0,zIndex:50}}>
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0"
+            style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>R</div>
+          <div className="hidden sm:block">
+            <div className="text-white font-bold text-sm leading-none">REVIVE</div>
+            <div className="text-slate-600 text-xs">Mitarbeiter</div>
+          </div>
+          <nav className="flex gap-1 mx-auto flex-wrap justify-center">
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setPage(t.id)}
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-all border ${page===t.id?'bg-violet-600/20 border-violet-500/40 text-violet-300':'text-slate-500 hover:text-slate-300 border-transparent hover:bg-white/5'}`}>
+                <SI p={t.icon} size={13}/><span className="hidden sm:inline">{t.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <SyncDot state={syncState}/>
+            <span className={`pill text-xs ${isAdmin?'bg-violet-500/20 text-violet-300':'bg-slate-700/40 text-slate-400'}`}>{isAdmin?'Admin':'Viewer'}</span>
+            <button onClick={logout} title="Abmelden" className="text-slate-600 hover:text-slate-400 transition-all"><SI p={IC.logout} size={14}/></button>
+          </div>
+        </div>
+      </header>
+      <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
+        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
+        {page==='personen'      && <PersonenView   ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
+        {page==='gruppen'       && <GruppenView    ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
+        {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
+        {page==='statistik'     && <StatistikView  ma={ma}/>}
+        {page==='einstellungen' && isAdmin && <EinstellungenView ma={ma} onChange={updateMa} toast={toast}/>}
+      </main>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
