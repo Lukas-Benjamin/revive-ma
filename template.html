@@ -109,6 +109,19 @@ const ToastContainer = ({ toasts }) => (
   </div>
 );
 
+// ─── User & Permission System ─────────────────────────────────────────────────
+const OWNER_NAME  = 'Lukas Reuter';
+const OWNER_PIN   = '0207';
+const ROLE_LABELS = { owner:'Eigentümer', admin:'Admin', editor:'Bearbeiter', viewer:'Betrachter' };
+const ROLE_OPTIONS = ['admin','editor','viewer'];
+
+const perms = u => {
+  if (!u) return {edit:false,del:false,settings:false,profiles:false};
+  if (u.role==='owner'||u.role==='admin') return {edit:true,del:true,settings:true,profiles:true,...(u.permissions||{})};
+  if (u.role==='editor') return {edit:true,del:false,settings:false,profiles:false,...(u.permissions||{})};
+  return {edit:false,del:false,settings:false,profiles:false,...(u.permissions||{})};
+};
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
 const Modal = ({ title, onClose, children, wide=false }) => {
   useEffect(() => {
@@ -1108,77 +1121,274 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// LOGIN
-// ═══════════════════════════════════════════════════════════════════════════════
-const DEFAULT_PIN = '0207';
-const LoginScreen = ({ onLogin }) => {
-  const [pw,       setPw]       = useState('');
-  const [err,      setErr]      = useState(false);
-  const [showPw,   setShowPw]   = useState(false);
-  const [adminPin, setAdminPin] = useState(DEFAULT_PIN);
-  const [ready,    setReady]    = useState(false);
+// ─── ProfilesView ─────────────────────────────────────────────────────────────
+const INP_P = "w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition-all";
+
+const ProfilesView = ({ currentUser, onUpdateUser }) => {
+  const [users, setUsers]   = useState([]);
+  const [modal, setModal]   = useState(null);
+  const [form, setForm]     = useState({name:'',pin:'',role:'viewer',permissions:{}});
+  const [showFPin,setShowFPin] = useState(false);
+  const [myPin, setMyPin]   = useState('');
+  const [showMP, setShowMP] = useState(false);
+  const [pinOK, setPinOK]   = useState(false);
+  const can = perms(currentUser);
 
   useEffect(() => {
-    db.collection('config').doc('auth').get()
-      .then(snap => { const p=snap.data()?.adminPin; if(p) setAdminPin(p); setReady(true); })
-      .catch(() => setReady(true));
+    const unsub = db.collection('k21-users').onSnapshot(
+      snap => setUsers(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.name.localeCompare(b.name))),
+      ()=>{}
+    );
+    return ()=>unsub();
   }, []);
 
-  const tryAdmin = () => {
-    if (!ready) return;
-    if (pw===adminPin) { onLogin('admin'); }
-    else { setErr(true); setPw(''); }
+  const save = async () => {
+    const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{}};
+    if (!data.name||!data.pin) return;
+    if (modal==='add') await db.collection('k21-users').add({...data,createdAt:new Date().toISOString()});
+    else await db.collection('k21-users').doc(modal.user.id).update(data);
+    setModal(null);
+  };
+
+  const del = async u => {
+    if (!confirm(`${u.name} wirklich löschen?`)) return;
+    await db.collection('k21-users').doc(u.id).delete();
+  };
+
+  const changeMyPin = async () => {
+    if (!myPin.trim()) return;
+    if (currentUser?.role !== 'owner') await db.collection('k21-users').doc(currentUser.id).update({pin:myPin});
+    onUpdateUser({...currentUser});
+    setMyPin(''); setPinOK(true); setTimeout(()=>setPinOK(false),2500);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{background:'#000000'}}>
-      <div className="w-full max-w-xs up">
-        {/* K21 Logo + Branding */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-2 border-white" style={{background:'#000000'}}>
-            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:22,color:'#ffffff',letterSpacing:'-1px'}}>K21</span>
-          </div>
-          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#ffffff',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
-          <p className="text-slate-500 text-sm mt-2 tracking-wide">Wunstorf · Schaumburg · Revive</p>
-          {!ready && <p className="text-slate-700 text-xs mt-2" style={{animation:'pulse 1.5s infinite'}}>Verbinde…</p>}
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="grad text-xl">Profile</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Zugänge &amp; Berechtigungen</p>
         </div>
+        {can.profiles && (
+          <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{}});setModal('add');}}
+            className="flex items-center gap-1.5 text-white text-xs font-bold px-3.5 py-2 transition-all"
+            style={{background:'#000000',borderRadius:30}}>
+            <SI p={IC.plus} size={13}/> Profil
+          </button>
+        )}
+      </div>
 
-        {/* Login Card */}
-        <div className="rounded-2xl glow overflow-hidden" style={{background:'#151a25',border:'1px solid rgba(255,255,255,0.07)'}}>
-          {/* Viewer button */}
-          <div className="p-5 pb-3">
-            <button onClick={() => onLogin('viewer')}
-              className="w-full py-3 text-sm font-semibold transition-all"
-              style={{borderRadius:30, color:'rgba(203,213,225,1)', border:'1px solid rgba(255,255,255,0.15)', background:'transparent'}}>
-              Nur lesen
+      {/* My PIN */}
+      <div className="glass rounded-2xl p-5">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Mein PIN ändern</p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input type={showMP?'text':'password'} value={myPin} onChange={e=>setMyPin(e.target.value)}
+              placeholder="Neuer PIN" className={INP_P+" pr-9"} onKeyDown={e=>e.key==='Enter'&&changeMyPin()}/>
+            <button type="button" onClick={()=>setShowMP(p=>!p)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-all">
+              <SI p={IC.eye} size={14}/>
             </button>
           </div>
+          <button onClick={changeMyPin} disabled={!myPin.trim()}
+            className="px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40 transition-all"
+            style={{background:'#000000',borderRadius:12}}>
+            {pinOK?'✓':'Speichern'}
+          </button>
+        </div>
+        {currentUser?.role==='owner' && <p className="text-xs text-slate-400 mt-2">Eigentümer-PIN ist fest eingestellt.</p>}
+      </div>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 px-5">
-            <div className="flex-1 h-px bg-white/8"/>
-            <span className="text-slate-600 text-xs font-semibold uppercase tracking-widest">oder</span>
-            <div className="flex-1 h-px bg-white/8"/>
+      {/* Owner card */}
+      <div className="glass rounded-2xl p-4 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{background:'#000000'}}>LR</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-slate-900 text-sm">Lukas Reuter</div>
+          <div className="text-slate-500 text-xs">Eigentümer · Alle Rechte</div>
+        </div>
+        <span className="pill text-xs font-semibold" style={{background:'rgba(0,0,0,0.08)',color:'#0f172a'}}>Eigentümer</span>
+      </div>
+
+      {/* Firebase users */}
+      {users.map(u => (
+        <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{background:'#4f46e5'}}>{initials(u.name)}</div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-slate-900 text-sm truncate">{u.name}</div>
+            <div className="text-slate-500 text-xs">{ROLE_LABELS[u.role]||'Betrachter'}</div>
           </div>
+          {can.profiles && <>
+            <button onClick={()=>{setForm({name:u.name,pin:u.pin||'',role:u.role||'viewer',permissions:u.permissions||{}});setModal({mode:'edit',user:u});}}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all">
+              <SI p={IC.edit} size={13}/>
+            </button>
+            <button onClick={()=>del(u)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-50 text-slate-500 hover:text-red-500 transition-all">
+              <SI p={IC.trash} size={13}/>
+            </button>
+          </>}
+        </div>
+      ))}
+      {users.length===0 && (
+        <div className="glass rounded-2xl p-5 text-center text-slate-400 text-sm">
+          {can.profiles ? 'Noch keine Profile — erstelle das erste oben.' : 'Kontaktiere einen Admin für Zugang.'}
+        </div>
+      )}
 
-          {/* Admin login */}
-          <div className="p-5 pt-3 space-y-2.5">
+      {modal && (
+        <Modal title={modal==='add'?'Profil erstellen':'Profil bearbeiten'} onClose={()=>setModal(null)}>
+          <div className="space-y-3">
+            <div>
+              <label className="text-slate-500 text-xs block mb-1.5">Name *</label>
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}
+                placeholder="Vollständiger Name" className={INP_P} autoFocus/>
+            </div>
+            <div>
+              <label className="text-slate-500 text-xs block mb-1.5">PIN / Passwort *</label>
+              <div className="relative">
+                <input type={showFPin?'text':'password'} value={form.pin}
+                  onChange={e=>setForm(f=>({...f,pin:e.target.value}))}
+                  placeholder="PIN setzen" className={INP_P+" pr-9"}/>
+                <button type="button" onClick={()=>setShowFPin(p=>!p)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-all">
+                  <SI p={IC.eye} size={14}/>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-slate-500 text-xs block mb-1.5">Rolle</label>
+              <div className="flex gap-1.5">
+                {ROLE_OPTIONS.map(r=>(
+                  <button key={r} onClick={()=>setForm(f=>({...f,role:r,permissions:{}}))}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                    {ROLE_LABELS[r]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {form.role==='viewer' && (
+              <div className="pt-1 space-y-2">
+                <label className="text-slate-500 text-xs block">Zusätzliche Rechte</label>
+                {[['edit','Daten bearbeiten'],['del','Daten löschen'],['settings','Einstellungen sehen']].map(([k,l])=>(
+                  <label key={k} className="flex items-center gap-2.5 cursor-pointer py-0.5">
+                    <input type="checkbox" checked={!!form.permissions[k]}
+                      onChange={e=>setForm(f=>({...f,permissions:{...f.permissions,[k]:e.target.checked}}))}/>
+                    <span className="text-slate-700 text-sm">{l}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 pt-2">
+              <button onClick={()=>setModal(null)}
+                className="flex-1 py-2.5 text-sm text-slate-600 font-medium rounded-xl transition-all"
+                style={{background:'rgba(0,0,0,0.05)'}}>Abbrechen</button>
+              <button onClick={save} disabled={!form.name.trim()||!form.pin}
+                className="flex-1 py-2.5 text-sm font-bold text-white rounded-xl disabled:opacity-40 transition-all"
+                style={{background:'#000000'}}>Speichern</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════════════════════════════════════
+const LoginScreen = ({ onLogin }) => {
+  const [name,     setName]    = useState('');
+  const [pin,      setPin]     = useState('');
+  const [showPin,  setShowPin] = useState(false);
+  const [err,      setErr]     = useState('');
+  const [users,    setUsers]   = useState([]);
+  const [ready,    setReady]   = useState(false);
+  const [dropOpen, setDropOpen]= useState(false);
+
+  useEffect(() => {
+    db.collection('k21-users').get()
+      .then(snap => { setUsers(snap.docs.map(d=>({id:d.id,...d.data()}))); setReady(true); })
+      .catch(() => setReady(true));
+  }, []);
+
+  const allNames = [OWNER_NAME, ...users.map(u=>u.name)];
+  const filtered = name.trim() ? allNames.filter(n=>n.toLowerCase().includes(name.toLowerCase())) : allNames;
+
+  const tryLogin = () => {
+    const n = name.trim();
+    if (!n||!pin) { setErr('Bitte Name und PIN eingeben'); return; }
+    if (n.toLowerCase()===OWNER_NAME.toLowerCase()&&pin===OWNER_PIN) {
+      onLogin({id:'owner',name:OWNER_NAME,role:'owner',permissions:{edit:true,del:true,settings:true,profiles:true}});
+      return;
+    }
+    const u = users.find(x=>x.name.toLowerCase()===n.toLowerCase());
+    if (u&&u.pin===pin) {
+      onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u)});
+    } else {
+      setErr('Name oder PIN nicht korrekt');
+    }
+  };
+
+  const INP_L = "w-full bg-black/5 border border-black/10 rounded-xl px-4 py-3 text-slate-900 placeholder-slate-400 text-sm transition-all";
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{background:'#f8fafc'}}>
+      <div className="w-full max-w-xs up">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-2" style={{background:'#000000',borderColor:'#000000'}}>
+            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:22,color:'#ffffff',letterSpacing:'-1px'}}>K21</span>
+          </div>
+          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#0f172a',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
+          <p className="text-slate-500 text-sm mt-2 tracking-wide">Wunstorf · Schaumburg · Revive</p>
+        </div>
+
+        <div className="glass rounded-2xl glow" style={{overflow:'visible'}}>
+          <div className="p-5 space-y-3">
             <div className="relative">
-              <input value={pw} onChange={e=>{setPw(e.target.value);setErr(false);}} onKeyDown={e=>e.key==='Enter'&&tryAdmin()}
-                placeholder="Admin-PIN" autoComplete="off" autoCorrect="off" spellCheck="false"
-                type={showPw?'text':'password'}
-                className={`w-full border rounded-xl px-4 py-3 text-sm pr-12 ${err?'border-red-500/60':'border-black/10'}`} style={{background:'rgba(255,255,255,0.08)',color:'#e2e8f0'}}
-                autoFocus/>
-              <button type="button" onClick={() => setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}>
-                <SI p={showPw?IC.eyeOff:IC.eye} size={15}/>
+              <input value={name} onChange={e=>{setName(e.target.value);setErr('');setDropOpen(true);}}
+                onFocus={()=>setDropOpen(true)} onBlur={()=>setTimeout(()=>setDropOpen(false),150)}
+                placeholder="Dein Name" className={INP_L} autoFocus/>
+              {dropOpen&&filtered.length>0&&(
+                <div className="absolute top-full mt-1 left-0 right-0 glass rounded-xl z-20 glow overflow-hidden">
+                  {filtered.slice(0,6).map(n=>(
+                    <button key={n} onMouseDown={()=>{setName(n);setDropOpen(false);setErr('');}}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-800 hover:bg-black/5 transition-all flex items-center gap-2.5">
+                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold" style={{background:'#000000',fontSize:9}}>
+                        {n.split(' ').map(w=>w[0]).join('').slice(0,2)}
+                      </div>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <input type={showPin?'text':'password'} value={pin}
+                onChange={e=>{setPin(e.target.value);setErr('');}}
+                onKeyDown={e=>e.key==='Enter'&&tryLogin()}
+                placeholder="PIN / Passwort" className={INP_L+" pr-10"}/>
+              <button type="button" onClick={()=>setShowPin(p=>!p)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-all">
+                <SI p={IC.eye} size={15}/>
               </button>
             </div>
-            {err && <p className="text-red-400 text-xs">Falsches Passwort</p>}
-            <button onClick={tryAdmin} disabled={!ready}
-              className="w-full py-3 text-sm font-bold transition-all text-black disabled:opacity-40"
-              style={{background:'#ffffff',borderRadius:30}}>
-              {ready?'Als Leiter anmelden':'Verbinde…'}
+            {err&&<p className="text-red-500 text-xs">{err}</p>}
+            <button onClick={tryLogin} disabled={!name.trim()||!pin||!ready}
+              className="w-full py-3 text-sm font-bold text-white disabled:opacity-40 transition-all"
+              style={{background:'#000000',borderRadius:30}}>
+              {ready?'Anmelden':'Verbinde…'}
+            </button>
+          </div>
+          <div className="flex items-center gap-3 px-5 pb-1">
+            <div className="flex-1 h-px bg-black/10"/>
+            <span className="text-slate-400 text-xs uppercase tracking-wider font-semibold">oder</span>
+            <div className="flex-1 h-px bg-black/10"/>
+          </div>
+          <div className="px-5 py-4">
+            <button onClick={()=>onLogin(null)}
+              className="w-full py-2.5 text-sm font-medium text-slate-500 hover:text-slate-900 transition-all"
+              style={{borderRadius:30,border:'1px solid rgba(0,0,0,0.1)'}}>
+              Als Gast ansehen
             </button>
           </div>
         </div>
@@ -1191,24 +1401,35 @@ const LoginScreen = ({ onLogin }) => {
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = () => {
-  const [role,      setRole]      = useState(() => localStorage.getItem('rma-role')||null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const s = localStorage.getItem('k21-user');
+    if (!s) return undefined;
+    if (s==='guest') return null;
+    try { return JSON.parse(s); } catch { return undefined; }
+  });
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
   const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
   const [page,      setPage]      = useState('dienstplan');
   const [syncState, setSyncState] = useState('connecting');
   const [toasts,    setToasts]    = useState([]);
 
-  const isAdmin = role==='admin';
-  const curProfile = PROFILES.find(p=>p.id===profile) || PROFILES[2];
+  const p           = perms(currentUser);
+  const isAdmin     = p.settings;
+  const canEdit     = p.edit;
+  const canDel      = p.del;
+  const canSettings = p.settings;
+  const canProfiles = p.profiles;
+  const curProfile  = PROFILES.find(pp=>pp.id===profile) || PROFILES[2];
 
   const toast = (msg, type='success') => {
     const id = genId();
-    setToasts(p=>[...p, { id, msg, type }]);
-    setTimeout(() => setToasts(p=>p.filter(t=>t.id!==id)), 3000);
+    setToasts(pp=>[...pp, { id, msg, type }]);
+    setTimeout(() => setToasts(pp=>pp.filter(t=>t.id!==id)), 3000);
   };
 
-  const login  = r => { setRole(r); localStorage.setItem('rma-role',r); };
-  const logout = () => { setRole(null); localStorage.removeItem('rma-role'); setPage('dienstplan'); };
+  const login  = user => { setCurrentUser(user); localStorage.setItem('k21-user', user ? JSON.stringify(user) : 'guest'); };
+  const logout = () => { setCurrentUser(undefined); localStorage.removeItem('k21-user'); setPage('dienstplan'); };
+  const updateCurrentUser = user => { setCurrentUser(user); localStorage.setItem('k21-user', JSON.stringify(user)); };
 
   const switchProfile = pid => {
     setProfile(pid);
@@ -1248,7 +1469,7 @@ const App = () => {
     writeMa(next);
   };
 
-  if (!role) return <LoginScreen onLogin={login}/>;
+  if (currentUser === undefined) return <LoginScreen onLogin={login}/>;
 
   const TABS = [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
@@ -1256,7 +1477,8 @@ const App = () => {
     { id:'gruppen',    label:'Gruppen',    icon:IC.users    },
     { id:'vorlagen',   label:'Vorlagen',   icon:IC.layers   },
     { id:'statistik',  label:'Statistik',  icon:IC.chart    },
-    ...(isAdmin ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog }] : []),
+    ...(canSettings  ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
+    ...(canProfiles  ? [{ id:'profiles',      label:'Profile',       icon:IC.users }] : []),
   ];
 
   return (
@@ -1294,7 +1516,7 @@ const App = () => {
           {/* Right: sync + role + logout */}
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28 justify-end">
             <SyncDot state={syncState}/>
-            <span className="pill text-xs" style={{borderRadius:30, background:isAdmin?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:isAdmin?'#ffffff':'rgba(148,163,184,1)'}}>{isAdmin?'Leiter':'Gast'}</span>
+            <span className="pill text-xs" style={{borderRadius:30, background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? currentUser.name.split(' ')[0] : 'Gast'}</span>
             <button onClick={logout} title="Abmelden" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.logout} size={14}/></button>
           </div>
         </div>
@@ -1320,12 +1542,13 @@ const App = () => {
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
-        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
-        {page==='personen'      && <PersonenView   ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
-        {page==='gruppen'       && <GruppenView    ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
-        {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
+        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='personen'      && <PersonenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='gruppen'       && <GruppenView    ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={ma}/>}
-        {page==='einstellungen' && isAdmin && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
+        {page==='einstellungen' && canSettings  && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
+        {page==='profiles'      && canProfiles  && <ProfilesView currentUser={currentUser} onUpdateUser={updateCurrentUser}/>}
       </main>
     </div>
   );
