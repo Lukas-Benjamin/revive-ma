@@ -90,6 +90,13 @@ const DEFAULT_MA = () => ({ personen:[], gruppen:[], vorlagen:[], schichten:[] }
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 
+// ─── Church Profiles ──────────────────────────────────────────────────────────
+const PROFILES = [
+  { id:'wunstorf',   label:'Wunstorf',   color:'#06b6d4', grad:'linear-gradient(135deg,#0891b2,#3b82f6)' },
+  { id:'schaumburg', label:'Schaumburg',  color:'#10b981', grad:'linear-gradient(135deg,#059669,#06b6d4)' },
+  { id:'revive',     label:'Revive',      color:'#8b5cf6', grad:'linear-gradient(135deg,#8b5cf6,#ec4899)' },
+];
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const ToastContainer = ({ toasts }) => (
   <div style={{position:'fixed',bottom:20,right:20,zIndex:200,display:'flex',flexDirection:'column',gap:8,pointerEvents:'none'}}>
@@ -976,7 +983,7 @@ const StatistikView = ({ ma }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, toast }) => {
+const EinstellungenView = ({ ma, onChange, toast, profile }) => {
   const [pin,    setPin]    = useState('');
   const [pin2,   setPin2]   = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -995,7 +1002,7 @@ const EinstellungenView = ({ ma, onChange, toast }) => {
     const blob = new Blob([JSON.stringify(ma, null, 2)], { type:'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `revive-ma-${today()}.json`;
+    a.download = `ma-${profile}-${today()}.json`;
     a.click();
     toast('Export heruntergeladen');
   };
@@ -1106,8 +1113,8 @@ const LoginScreen = ({ onLogin }) => {
         <div className="text-center">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-black text-white text-3xl mx-auto mb-4"
             style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>R</div>
-          <div className="text-white font-bold text-xl tracking-tight">REVIVE Mitarbeiter</div>
-          <div className="text-slate-500 text-sm mt-1">Dienstplan &amp; Team-Verwaltung</div>
+          <div className="text-white font-bold text-xl tracking-tight">Mitarbeiter-App</div>
+          <div className="text-slate-500 text-sm mt-1">Wunstorf · Schaumburg · Revive</div>
           {!ready && <div className="text-slate-600 text-xs mt-2" style={{animation:'pulse 1.5s infinite'}}>Verbinde…</div>}
         </div>
         <div className="glass rounded-2xl p-6 glow space-y-3">
@@ -1144,12 +1151,14 @@ const LoginScreen = ({ onLogin }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = () => {
   const [role,      setRole]      = useState(() => localStorage.getItem('rma-role')||null);
-  const [ma,        setMa]        = useState(() => loadJSON('rma-data', DEFAULT_MA()));
+  const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
+  const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
   const [page,      setPage]      = useState('dienstplan');
   const [syncState, setSyncState] = useState('connecting');
   const [toasts,    setToasts]    = useState([]);
 
   const isAdmin = role==='admin';
+  const curProfile = PROFILES.find(p=>p.id===profile) || PROFILES[2];
 
   const toast = (msg, type='success') => {
     const id = genId();
@@ -1160,29 +1169,37 @@ const App = () => {
   const login  = r => { setRole(r); localStorage.setItem('rma-role',r); };
   const logout = () => { setRole(null); localStorage.removeItem('rma-role'); setPage('dienstplan'); };
 
+  const switchProfile = pid => {
+    setProfile(pid);
+    localStorage.setItem('ma-profile', pid);
+    setPage('dienstplan');
+  };
+
   // Firebase Sync
   const writeMa = data => {
     setSyncState('saving');
-    localStorage.setItem('rma-data', JSON.stringify(data));
-    db.collection('revive').doc('ma').set({ data })
+    localStorage.setItem(`ma-data-${profile}`, JSON.stringify(data));
+    db.collection(profile).doc('ma').set({ data })
       .then(()=>setSyncState('synced'))
       .catch(()=>setSyncState('error'));
   };
 
   useEffect(() => {
     setSyncState('connecting');
-    const unsub = db.collection('revive').doc('ma').onSnapshot(
+    const localKey = `ma-data-${profile}`;
+    setMa(loadJSON(localKey, DEFAULT_MA()));
+    const unsub = db.collection(profile).doc('ma').onSnapshot(
       { includeMetadataChanges:true },
       snap => {
         if (snap.metadata.hasPendingWrites) return;
         const data = snap.data()?.data;
-        if (data) { localStorage.setItem('rma-data',JSON.stringify(data)); setMa(data); }
+        if (data) { localStorage.setItem(localKey, JSON.stringify(data)); setMa(data); }
         setSyncState('synced');
       },
       () => setSyncState('error')
     );
     return () => unsub();
-  }, []);
+  }, [profile]);
 
   const updateMa = updater => {
     const next = typeof updater==='function' ? updater(ma) : updater;
@@ -1207,9 +1224,9 @@ const App = () => {
       <header style={{background:'rgba(15,15,26,0.95)',backdropFilter:'blur(20px)',borderBottom:'1px solid rgba(255,255,255,0.07)',position:'sticky',top:0,zIndex:50}}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0"
-            style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>R</div>
+            style={{background:curProfile.grad}}>{curProfile.label[0]}</div>
           <div className="hidden sm:block">
-            <div className="text-white font-bold text-sm leading-none">REVIVE</div>
+            <div className="text-white font-bold text-sm leading-none">{curProfile.label}</div>
             <div className="text-slate-600 text-xs">Mitarbeiter</div>
           </div>
           <nav className="flex gap-1 mx-auto flex-wrap justify-center">
@@ -1226,6 +1243,21 @@ const App = () => {
             <button onClick={logout} title="Abmelden" className="text-slate-600 hover:text-slate-400 transition-all"><SI p={IC.logout} size={14}/></button>
           </div>
         </div>
+        {/* Profile switcher bar */}
+        <div style={{borderTop:'1px solid rgba(255,255,255,0.05)',padding:'5px 16px'}}>
+          <div className="max-w-4xl mx-auto flex items-center gap-2">
+            <span className="text-slate-600 text-xs flex-shrink-0">Bereich:</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {PROFILES.map(p => (
+                <button key={p.id} onClick={() => switchProfile(p.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${profile===p.id?'text-white':'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                  style={profile===p.id?{background:p.grad}:{}}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
         {page==='dienstplan'    && <DienstplanView ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
@@ -1233,7 +1265,7 @@ const App = () => {
         {page==='gruppen'       && <GruppenView    ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
         {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={isAdmin?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={ma}/>}
-        {page==='einstellungen' && isAdmin && <EinstellungenView ma={ma} onChange={updateMa} toast={toast}/>}
+        {page==='einstellungen' && isAdmin && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
       </main>
     </div>
   );
