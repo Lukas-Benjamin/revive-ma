@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>REVIVE Mitarbeiter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -19,16 +19,16 @@
   <style>
     * { box-sizing: border-box; }
     ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: #080808; }
-    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
-    body { background: #080808; color: #e2e8f0; font-family: 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
-    .glass { background: #111111; border: 1px solid rgba(255,255,255,0.07); }
-    .glass-hover:hover { background: #1a1a1a; }
-    .glow { box-shadow: 0 2px 24px rgba(0,0,0,0.5); }
-    .grad { color: #ffffff; -webkit-text-fill-color: #ffffff; background: none; font-weight: 800; letter-spacing: -0.02em; }
+    ::-webkit-scrollbar-track { background: #000000; }
+    ::-webkit-scrollbar-thumb { background: #1a2135; border-radius: 3px; }
+    body { background: #000000; color: #e2e8f0; font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    .glass { background: #151a25; border: 1px solid rgba(255,255,255,0.07); }
+    .glass-hover:hover { background: #1c2438; }
+    .glow { box-shadow: 0 4px 32px rgba(0,0,0,0.6); }
+    .grad { color: #ffffff; -webkit-text-fill-color: #ffffff; background: none; font-weight: 900; letter-spacing: -0.03em; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.65); cursor: pointer; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: rgba(255,255,255,0.25) !important; }
-    select option { background: #111111; color: #e2e8f0; }
+    select option { background: #151a25; color: #e2e8f0; }
     @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeIn { from{opacity:0}to{opacity:1} }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -121,7 +121,7 @@ const Modal = ({ title, onClose, children, wide=false }) => {
       onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
       <div className={`glass rounded-2xl glow w-full ${wide?'max-w-2xl':'max-w-md'}`}
         style={{maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',position:'sticky',top:0,background:'rgba(8,8,8,0.99)',zIndex:10}}>
+        <div className="flex items-center justify-between px-5 py-4" style={{borderBottom:'1px solid rgba(255,255,255,0.06)',position:'sticky',top:0,background:'rgba(0,0,0,0.99)',zIndex:10}}>
           <h3 className="font-semibold text-slate-200 text-sm">{title}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-all"><SI p={IC.x} size={15}/></button>
         </div>
@@ -206,7 +206,7 @@ const PersonenView = ({ ma, onChange, toast }) => {
           <h1 className="text-xl font-bold grad">Personen</h1>
           <p className="text-slate-500 text-sm mt-0.5">{ma.personen.length} Mitarbeiter</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
           <SI p={IC.plus} size={13}/> Person
         </button>
       </div>
@@ -259,8 +259,8 @@ const PersonenView = ({ ma, onChange, toast }) => {
               </div>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-semibold py-2.5 rounded-xl text-sm transition-all">Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-sm transition-all">Abbrechen</button>
+              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -316,7 +316,7 @@ const GruppenView = ({ ma, onChange, toast }) => {
           <h1 className="text-xl font-bold grad">Gruppen &amp; Dienste</h1>
           <p className="text-slate-500 text-sm mt-0.5">{ma.gruppen.length} Gruppen</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+        <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
           <SI p={IC.plus} size={13}/> Gruppe
         </button>
       </div>
@@ -379,8 +379,8 @@ const GruppenView = ({ ma, onChange, toast }) => {
               <ColorPicker value={form.farbe} onChange={c=>setForm(p=>({...p,farbe:c}))}/>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={saveGruppe} className="flex-1 bg-white hover:bg-gray-100 text-black font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+              <button onClick={saveGruppe} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-white/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -430,7 +430,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
           <p className="text-slate-500 text-sm mt-0.5">Wiederverwendbare Dienstplan-Vorlagen</p>
         </div>
         <button onClick={openAdd} disabled={ma.gruppen.length===0}
-          className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
           <SI p={IC.plus} size={13}/> Vorlage
         </button>
       </div>
@@ -509,8 +509,8 @@ const VorlagenView = ({ ma, onChange, toast }) => {
               </button>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-white/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -645,7 +645,7 @@ const DienstplanView = ({ ma, onChange, toast }) => {
           <p className="text-slate-500 text-sm mt-0.5">{ma.schichten.length} Schichten</p>
         </div>
         <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
-          className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-semibold px-3 py-2 rounded-xl transition-all">
+          className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
           <SI p={IC.plus} size={13}/> Schicht
         </button>
       </div>
@@ -717,8 +717,8 @@ const DienstplanView = ({ ma, onChange, toast }) => {
               </div>
             )}
             <div className="flex gap-2 pt-1">
-              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-semibold py-2.5 rounded-xl text-sm">Erstellen</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Erstellen</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-white/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -890,8 +890,8 @@ const DienstplanView = ({ ma, onChange, toast }) => {
                 );
               })}
               <div className="flex gap-2 pt-2">
-                <button onClick={saveWishes} className="flex-1 bg-white hover:bg-gray-100 text-black font-semibold py-2.5 rounded-xl text-sm">Speichern</button>
-                <button onClick={() => setModal(null)} className="px-4 py-2.5 rounded-xl bg-white/5 text-slate-400 text-sm">Abbrechen</button>
+                <button onClick={saveWishes} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-white/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
               </div>
             </div>
           </Modal>
@@ -1045,7 +1045,7 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
         <input type={showPw?'text':'password'} value={pin2} onChange={e=>setPin2(e.target.value)}
           placeholder="PIN bestätigen" className={"w-full "+INP}
           onKeyDown={e=>e.key==='Enter'&&savePin()}/>
-        <button onClick={savePin} className="w-full py-2.5 rounded-xl bg-white hover:bg-gray-100 text-black text-sm font-semibold transition-all">PIN speichern</button>
+        <button onClick={savePin} className="w-full py-2.5 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all" style={{borderRadius:30}}>PIN speichern</button>
       </div>
 
       {/* Backup */}
@@ -1108,36 +1108,53 @@ const LoginScreen = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6 up">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-black text-white text-3xl mx-auto mb-4"
-            style={{background:'linear-gradient(135deg,#8b5cf6,#ec4899)'}}>R</div>
-          <div className="text-white font-bold text-xl tracking-tight">Mitarbeiter-App</div>
-          <div className="text-slate-500 text-sm mt-1">Wunstorf · Schaumburg · Revive</div>
-          {!ready && <div className="text-slate-600 text-xs mt-2" style={{animation:'pulse 1.5s infinite'}}>Verbinde…</div>}
+    <div className="min-h-screen flex items-center justify-center px-4" style={{background:'#000000'}}>
+      <div className="w-full max-w-xs up">
+        {/* K21 Logo + Branding */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-2 border-white" style={{background:'#000000'}}>
+            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:22,color:'#ffffff',letterSpacing:'-1px'}}>K21</span>
+          </div>
+          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#ffffff',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
+          <p className="text-slate-500 text-sm mt-2 tracking-wide">Wunstorf · Schaumburg · Revive</p>
+          {!ready && <p className="text-slate-700 text-xs mt-2" style={{animation:'pulse 1.5s infinite'}}>Verbinde…</p>}
         </div>
-        <div className="glass rounded-2xl p-6 glow space-y-3">
-          <button onClick={() => onLogin('viewer')}
-            className="w-full py-3 rounded-xl text-sm font-semibold transition-all bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10">
-            Viewer – nur lesen
-          </button>
-          <div className="space-y-2">
+
+        {/* Login Card */}
+        <div className="glass rounded-2xl glow overflow-hidden">
+          {/* Viewer button */}
+          <div className="p-5 pb-3">
+            <button onClick={() => onLogin('viewer')}
+              className="w-full py-3 text-sm font-semibold transition-all text-slate-300 border border-white/10 hover:border-white/25 hover:text-white hover:bg-white/5"
+              style={{borderRadius:30}}>
+              Nur lesen
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 px-5">
+            <div className="flex-1 h-px bg-white/8"/>
+            <span className="text-slate-600 text-xs font-semibold uppercase tracking-widest">oder</span>
+            <div className="flex-1 h-px bg-white/8"/>
+          </div>
+
+          {/* Admin login */}
+          <div className="p-5 pt-3 space-y-2.5">
             <div className="relative">
               <input value={pw} onChange={e=>{setPw(e.target.value);setErr(false);}} onKeyDown={e=>e.key==='Enter'&&tryAdmin()}
                 placeholder="Admin-PIN" autoComplete="off" autoCorrect="off" spellCheck="false"
                 type={showPw?'text':'password'}
-                className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 text-sm pr-12 transition-all ${err?'border-red-500/60':'border-white/10'}`}
+                className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 text-sm pr-12 ${err?'border-red-500/60':'border-white/10'}`}
                 autoFocus/>
               <button type="button" onClick={() => setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                 <SI p={showPw?IC.eyeOff:IC.eye} size={15}/>
               </button>
             </div>
-            {err && <p className="text-red-400 text-xs px-1">Falsches Passwort</p>}
+            {err && <p className="text-red-400 text-xs">Falsches Passwort</p>}
             <button onClick={tryAdmin} disabled={!ready}
-              className="w-full py-3 rounded-xl text-sm font-semibold transition-all text-black disabled:opacity-50"
-              style={{background:'#ffffff'}}>
-              {ready?'Als Admin anmelden':'Verbinde…'}
+              className="w-full py-3 text-sm font-bold transition-all text-black disabled:opacity-40"
+              style={{background:'#ffffff',borderRadius:30}}>
+              {ready?'Als Leiter anmelden':'Verbinde…'}
             </button>
           </div>
         </div>
@@ -1221,41 +1238,60 @@ const App = () => {
   return (
     <div className="min-h-screen">
       <ToastContainer toasts={toasts}/>
-      <header style={{background:'rgba(5,5,5,0.98)',backdropFilter:'blur(20px)',borderBottom:'1px solid rgba(255,255,255,0.06)',position:'sticky',top:0,zIndex:50}}>
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0"
-            style={{background:curProfile.grad}}>{curProfile.label[0]}</div>
-          <div className="hidden sm:block">
-            <div className="text-white font-bold text-sm leading-none">{curProfile.label}</div>
-            <div className="text-slate-600 text-xs">Mitarbeiter</div>
+      <header style={{background:'#000000',borderBottom:'1px solid rgba(255,255,255,0.08)',position:'sticky',top:0,zIndex:50}}>
+        {/* ── Row 1: K21 Brand + Profil-Wahl + Sync/Rolle/Logout ── */}
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5 flex-shrink-0 w-28">
+            <div className="w-8 h-8 rounded-full border border-white/60 flex items-center justify-center flex-shrink-0">
+              <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:9,color:'#ffffff',letterSpacing:'-0.5px'}}>K21</span>
+            </div>
+            <div className="hidden sm:block">
+              <div style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>TEAM</div>
+            </div>
           </div>
-          <nav className="flex gap-1 mx-auto flex-wrap justify-center">
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => setPage(t.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-all border ${page===t.id?'bg-white border-transparent text-black':'text-slate-500 hover:text-slate-300 border-transparent hover:bg-white/5'}`}>
-                <SI p={t.icon} size={13}/><span className="hidden sm:inline">{t.label}</span>
+
+          {/* Profile switcher — centered */}
+          <div className="flex gap-1.5 mx-auto items-center">
+            {PROFILES.map(p => (
+              <button key={p.id} onClick={() => switchProfile(p.id)}
+                className="px-3.5 py-1.5 text-xs font-bold transition-all"
+                style={{
+                  borderRadius: 30,
+                  background: profile===p.id ? '#ffffff' : 'transparent',
+                  color: profile===p.id ? '#000000' : 'rgba(255,255,255,0.4)',
+                  border: profile===p.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.12)',
+                }}>
+                {p.label}
               </button>
             ))}
-          </nav>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          </div>
+
+          {/* Right: sync + role + logout */}
+          <div className="flex items-center gap-2.5 flex-shrink-0 w-28 justify-end">
             <SyncDot state={syncState}/>
-            <span className={`pill text-xs ${isAdmin?'bg-white/15 text-white':'bg-slate-700/40 text-slate-400'}`}>{isAdmin?'Admin':'Viewer'}</span>
-            <button onClick={logout} title="Abmelden" className="text-slate-600 hover:text-slate-400 transition-all"><SI p={IC.logout} size={14}/></button>
+            <span className={`pill text-xs ${isAdmin?'bg-white/15 text-white':'bg-white/5 text-slate-500'}`} style={{borderRadius:30}}>{isAdmin?'Leiter':'Gast'}</span>
+            <button onClick={logout} title="Abmelden" className="text-slate-600 hover:text-white transition-all"><SI p={IC.logout} size={14}/></button>
           </div>
         </div>
-        {/* Profile switcher bar */}
-        <div style={{borderTop:'1px solid rgba(255,255,255,0.05)',padding:'5px 16px'}}>
-          <div className="max-w-4xl mx-auto flex items-center gap-2">
-            <span className="text-slate-600 text-xs flex-shrink-0">Bereich:</span>
-            <div className="flex gap-1.5 flex-wrap">
-              {PROFILES.map(p => (
-                <button key={p.id} onClick={() => switchProfile(p.id)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${profile===p.id?'text-white':'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
-                  style={profile===p.id?{background:p.grad}:{}}>
-                  {p.label}
+
+        {/* ── Row 2: Navigation tabs (centered) ── */}
+        <div style={{borderTop:'1px solid rgba(255,255,255,0.06)'}}>
+          <div className="max-w-4xl mx-auto px-4 py-2 flex justify-center">
+            <nav className="flex gap-1 flex-wrap justify-center">
+              {TABS.map(t => (
+                <button key={t.id} onClick={() => setPage(t.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-all"
+                  style={{
+                    borderRadius: 30,
+                    background: page===t.id ? '#ffffff' : 'transparent',
+                    color: page===t.id ? '#000000' : 'rgba(255,255,255,0.4)',
+                    border: page===t.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.08)',
+                  }}>
+                  <SI p={t.icon} size={12}/><span className="hidden sm:inline">{t.label}</span>
                 </button>
               ))}
-            </div>
+            </nav>
           </div>
         </div>
       </header>
