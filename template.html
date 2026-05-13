@@ -126,7 +126,7 @@ const buildPlanText = (ma, single) => {
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[] });
+const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], tauschAnfragen:[] });
 const DEFAULT_SHARED = () => ({ personen:[], konflikte:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
@@ -644,7 +644,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // GRUPPEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
+const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => {
   const [modal,      setModal]      = useState(null);
   const [form,       setForm]       = useState({ name:'', farbe:'#6366f1' });
   const [newDienst,  setNewDienst]  = useState({});
@@ -689,7 +689,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
           <h1 className="text-xl font-bold grad">Gruppen &amp; Dienste</h1>
           <p className="text-slate-500 text-sm mt-0.5">{ma.gruppen.length} Gruppen</p>
         </div>
-        {onChange && (
+        {onChange && !allowedGroups && (
           <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Gruppe
           </button>
@@ -711,10 +711,10 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{background:g.farbe}}/>
                   <span className="font-semibold text-slate-800">{g.name}</span>
                   <span className="text-slate-600 text-xs">{members.length} Mitarbeiter · {(g.dienste||[]).length} Dienste</span>
-                  {onChange && (
+                  {onChange && (!allowedGroups || allowedGroups.includes(g.id)) && (
                     <div className="ml-auto flex gap-1">
                       <button onClick={() => openEdit(g)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
-                      <button onClick={() => delGruppe(g)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+                      {!allowedGroups && <button onClick={() => delGruppe(g)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>}
                     </div>
                   )}
                 </div>
@@ -722,11 +722,11 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
                   {(g.dienste||[]).map(d => (
                     <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
                       <span className="text-slate-700 text-sm flex-1">{d.name}</span>
-                      {onChange && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
+                      {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
                     </div>
                   ))}
                 </div>
-                {onChange && (
+                {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && (
                 <div className="flex gap-2">
                   <input value={newDienst[g.id]||''} onChange={e=>setNewDienst(p=>({...p,[g.id]:e.target.value}))}
                     placeholder="Neuer Dienst…" className={INP_SM+" flex-1"}
@@ -905,9 +905,9 @@ const VorlagenView = ({ ma, onChange, toast }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIENSTPLAN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
+const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentUser }) => {
   const [view,         setView]        = useState('list');   // 'list' | 'detail'
-  const [modal,        setModal]       = useState(null);     // 'create'|'assign'|'wish'|'share'|'addslot'
+  const [modal,        setModal]       = useState(null);     // 'create'|'assign'|'wish'|'share'|'addslot'|'tausch'
   const [selSchichtId, setSelSchichtId]= useState(null);
   const [selSlot,      setSelSlot]     = useState(null);     // slot obj + isSecond
   const [wishPid,      setWishPid]     = useState('');
@@ -915,9 +915,36 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
   const [shareText,    setShareText]   = useState('');
   const [shareScope,   setShareScope]  = useState('single'); // 'single'|'all'
   const [createForm,   setCreateForm]  = useState({ datum:today(), titel:'', vorlageId:'' });
+  const [tauschSlot,   setTauschSlot]  = useState(null);    // {slotId, isSecond}
+  const [tauschNote,   setTauschNote]  = useState('');
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => [...ma.schichten].sort((a,b)=>b.datum.localeCompare(a.datum)), [ma.schichten]);
+  const myPerson   = useMemo(() => currentUser ? ma.personen.find(p=>p.name===currentUser.name)||null : null, [ma.personen, currentUser]);
+  const myGroupIds = useMemo(() => myPerson ? (myPerson.gruppenIds||(myPerson.gruppeId?[myPerson.gruppeId]:[])) : [], [myPerson]);
+
+  // ── Tausch helpers ──
+  const submitTausch = () => {
+    if (!myPerson||!tauschSlot||!selSchicht) return;
+    const req = { id:genId(), schichtId:selSchicht.id, slotId:tauschSlot.slotId, isSecond:tauschSlot.isSecond, personId:myPerson.id, note:tauschNote.trim(), createdAt:new Date().toISOString() };
+    onTausch(m=>({ ...m, tauschAnfragen:[...(m.tauschAnfragen||[]),req] }));
+    setTauschSlot(null); setTauschNote(''); setModal('detail_view');
+    toast('Tausch-Anfrage gestellt 🔄');
+  };
+  const acceptTausch = req => {
+    if (!myPerson||req.personId===myPerson.id) return;
+    onTausch(m=>({
+      ...m,
+      schichten:m.schichten.map(s=>s.id===req.schichtId?{...s,slots:s.slots.map(sl=>sl.id===req.slotId?{...sl,[req.isSecond?'personId2':'personId']:myPerson.id}:sl)}:s),
+      tauschAnfragen:(m.tauschAnfragen||[]).filter(r=>r.id!==req.id)
+    }));
+    toast('Tausch angenommen ✓');
+  };
+  const cancelTausch = req => {
+    if (!myPerson||req.personId!==myPerson.id) return;
+    onTausch(m=>({ ...m, tauschAnfragen:(m.tauschAnfragen||[]).filter(r=>r.id!==req.id) }));
+    toast('Tausch-Anfrage zurückgezogen');
+  };
 
   // ── helpers ──
   const updateSchicht = (id, updater) => {
@@ -1076,7 +1103,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
           <p className="text-slate-500 text-sm mt-0.5">{ma.schichten.length} Schichten</p>
         </div>
         <div className="flex gap-2">
-          {onChange && <button onClick={runAutoAll} disabled={ma.schichten.length===0}
+          {onChange && !allowedGroups && <button onClick={runAutoAll} disabled={ma.schichten.length===0}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.zap} size={13}/> Auto-Plan
           </button>}
@@ -1084,7 +1111,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.send} size={13}/> Teilen
           </button>}
-          {onChange && <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
+          {onChange && !allowedGroups && <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Schicht
           </button>}
@@ -1101,6 +1128,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
         <div className="space-y-3">
           {sorted.map(s => {
             const filled = s.slots.filter(sl=>sl.personId).length;
+            const openRequests = (ma.tauschAnfragen||[]).filter(r=>r.schichtId===s.id).length;
             return (
               <div key={s.id} className="glass glass-hover rounded-2xl p-4 cursor-pointer transition-all"
                 onClick={() => { setSelSchichtId(s.id); setView('detail'); }}>
@@ -1112,6 +1140,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
                       {s.veroeffentlicht
                         ? <span className="pill" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>✓ Veröffentlicht</span>
                         : <span className="pill" style={{background:'rgba(100,116,139,0.15)',color:'#64748b'}}>Entwurf</span>}
+                      {openRequests>0 && <span className="pill" style={{background:'rgba(251,146,60,0.18)',color:'#f97316'}}>🔄 {openRequests} Tausch</span>}
                     </div>
                     <div className="text-slate-600 text-xs mb-2">{filled}/{s.slots.length} Slots besetzt</div>
                     <div className="flex flex-wrap gap-1">
@@ -1124,7 +1153,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
                       {s.slots.length>8 && <span className="text-slate-600 text-xs ml-1">+{s.slots.length-8}</span>}
                     </div>
                   </div>
-                  {onChange && <button onClick={e=>{e.stopPropagation();if(confirm('Schicht löschen?'))deleteSchicht(s.id);}}
+                  {onChange && !allowedGroups && <button onClick={e=>{e.stopPropagation();if(confirm('Schicht löschen?'))deleteSchicht(s.id);}}
                     className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-all">
                     <SI p={IC.trash} size={12}/>
                   </button>}
@@ -1185,7 +1214,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
 
       {/* Action Bar */}
       <div className="flex gap-2 flex-wrap">
-        {onChange && <>
+        {onChange && !allowedGroups && <>
           <button onClick={togglePublish}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selSchicht.veroeffentlicht?'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/40':'bg-black/5 text-slate-700 hover:bg-black/10'}`}>
             {selSchicht.veroeffentlicht?'✓ Veröffentlicht':'Veröffentlichen'}
@@ -1198,7 +1227,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/8 transition-all">
           <SI p={IC.send} size={12}/> Teilen
         </button>
-        {onChange && (
+        {onChange && !allowedGroups && (
           <button onClick={addSchSlot} disabled={ma.gruppen.length===0}
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/8 text-slate-800 hover:bg-black/12 disabled:opacity-40 transition-all">
             <SI p={IC.plus} size={12}/> Slot
@@ -1232,7 +1261,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
                 {wCount>0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
                 {onChange && <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>}
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
                 {/* Assign P1 — clickable for admin/allowed group, read-only otherwise */}
                 {(onChange && (!allowedGroups || allowedGroups.includes(sl.gruppeId)))
                   ? <button onClick={() => { setSelSlot({...sl,isSecond:false}); setModal('assign'); }}
@@ -1250,6 +1279,21 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
                       {p2?<><Avatar name={p2.name} farbe={p2.farbe} size={16}/><span>{p2.name}</span></>:'+ Zuweisen (2)'}
                     </button>
                   : p2 && <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{background:p2.farbe+'25',color:p2.farbe,border:`1px solid ${p2.farbe}44`}}><Avatar name={p2.name} farbe={p2.farbe} size={16}/>{p2.name}</span>
+                )}
+                {/* Tausch buttons — shown when myPerson is assigned to this slot */}
+                {onTausch && myPerson && sl.personId===myPerson.id && !(ma.tauschAnfragen||[]).some(r=>r.slotId===sl.id&&!r.isSecond) && (
+                  <button onClick={()=>{setTauschSlot({slotId:sl.id,isSecond:false});setTauschNote('');setModal('tausch');}}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{background:'rgba(251,146,60,0.12)',color:'#f97316',border:'1px solid rgba(251,146,60,0.25)'}}>
+                    🔄 Tauschen
+                  </button>
+                )}
+                {onTausch && myPerson && sl.doppelt && sl.personId2===myPerson.id && !(ma.tauschAnfragen||[]).some(r=>r.slotId===sl.id&&r.isSecond) && (
+                  <button onClick={()=>{setTauschSlot({slotId:sl.id,isSecond:true});setTauschNote('');setModal('tausch');}}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{background:'rgba(251,146,60,0.12)',color:'#f97316',border:'1px solid rgba(251,146,60,0.25)'}}>
+                    🔄 Tauschen (2)
+                  </button>
                 )}
               </div>
             </div>
@@ -1282,6 +1326,72 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
           </div>
         </div>
       )}
+
+      {/* Tausch-Anfragen Section */}
+      {onTausch && (() => {
+        const schichtReqs = (ma.tauschAnfragen||[]).filter(r=>r.schichtId===selSchicht.id);
+        const visReqs = schichtReqs.filter(r=>{
+          const requester=ma.personen.find(p=>p.id===r.personId);
+          if(!requester) return false;
+          const rGrps=requester.gruppenIds||(requester.gruppeId?[requester.gruppeId]:[]);
+          // Owner/admin see all; others see requests from their own groups
+          if(!myPerson) return true;
+          return rGrps.some(g=>myGroupIds.includes(g))||r.personId===myPerson.id;
+        });
+        if(visReqs.length===0) return null;
+        return (
+          <div className="glass rounded-2xl p-4 space-y-2">
+            <div className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">🔄 Tausch-Anfragen</div>
+            {visReqs.map(r=>{
+              const requester=ma.personen.find(p=>p.id===r.personId);
+              const schicht2=ma.schichten.find(s=>s.id===r.schichtId);
+              const slot2=schicht2?.slots.find(sl=>sl.id===r.slotId);
+              const g=ma.gruppen.find(x=>x.id===slot2?.gruppeId);
+              const d=(g?.dienste||[]).find(x=>x.id===slot2?.dienstId);
+              const isOwn=myPerson?.id===r.personId;
+              const canAccept=myPerson&&!isOwn&&(myPerson.gruppenIds||(myPerson.gruppeId?[myPerson.gruppeId]:[])).includes(slot2?.gruppeId||'');
+              return (
+                <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-xl" style={{background:'rgba(251,146,60,0.06)',border:'1px solid rgba(251,146,60,0.15)'}}>
+                  <Avatar name={requester?.name||'?'} farbe={requester?.farbe||'#f97316'} size={28}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-slate-700">{requester?.name||'?'} · <span style={{color:g?.farbe}}>{d?.name||'?'}</span></div>
+                    {r.note && <div className="text-slate-500 text-xs truncate">„{r.note}"</div>}
+                  </div>
+                  {canAccept && <button onClick={()=>acceptTausch(r)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                    style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>Annehmen</button>}
+                  {isOwn && <button onClick={()=>cancelTausch(r)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-500 hover:text-red-400">Zurückziehen</button>}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Tausch Modal */}
+      {modal==='tausch' && tauschSlot && selSchicht && (() => {
+        const slot2=selSchicht.slots.find(sl=>sl.id===tauschSlot.slotId);
+        const g=ma.gruppen.find(x=>x.id===slot2?.gruppeId);
+        const d=(g?.dienste||[]).find(x=>x.id===slot2?.dienstId);
+        return (
+          <Modal title="Tausch-Anfrage stellen" onClose={()=>setModal('detail_view')}>
+            <div className="space-y-4">
+              <p className="text-slate-500 text-sm">Dein Dienst <strong style={{color:g?.farbe}}>{d?.name||'?'}</strong> wird für alle in deiner Gruppe sichtbar. Wer annimmt, übernimmt den Dienst.</p>
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Nachricht (optional)</label>
+                <input value={tauschNote} onChange={e=>setTauschNote(e.target.value)}
+                  placeholder="z. B. bin krank, bitte jemand übernehmen"
+                  className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&submitTausch()}/>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={submitTausch} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Anfrage stellen</button>
+                <button onClick={()=>setModal('detail_view')} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Assign Modal */}
       {modal==='assign' && selSlot && (() => {
@@ -2052,7 +2162,7 @@ const App = () => {
     ...(p.edit ? [{ id:'personen', label:'Personen', icon:IC.person }] : []),
     ...(canEdit ? [
       { id:'gruppen',   label:'Gruppen',   icon:IC.users  },
-      { id:'vorlagen',  label:'Vorlagen',  icon:IC.layers },
+      ...(!allowedGroups ? [{ id:'vorlagen', label:'Vorlagen', icon:IC.layers }] : []),
       { id:'statistik', label:'Statistik', icon:IC.chart  },
     ] : []),
     ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
@@ -2119,9 +2229,9 @@ const App = () => {
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
-        {page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
+        {page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} onTausch={currentUser?updateMa:null} toast={toast} allowedGroups={allowedGroups} currentUser={currentUser}/>}
         {page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
-        {page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast}/>}
+        {page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
         {page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={fullMa}/>}
         {page==='einstellungen' && canSettings  && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile}/>}
