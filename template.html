@@ -165,16 +165,9 @@ const perms = u => {
 
 // Returns 'edit' | 'view' | 'none' for a user+area combo
 const getAreaAccess = (user, areaId) => {
-  if (!user) return 'view';
+  if (!user) return 'none';
   if (user.role==='owner'||user.role==='admin') return 'edit';
-  const aa = user.areaAccess;
-  if (!aa||!Object.keys(aa).length) {
-    // Backwards compat: old areas array format
-    const old = user.areas||[];
-    if (!old.length) return user.role==='editor'?'edit':'view';
-    return old.includes(areaId)?(user.role==='editor'?'edit':'view'):'none';
-  }
-  return aa[areaId]??'none';
+  return (user.areaAccess||{})[areaId]??'none';
 };
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -245,7 +238,7 @@ const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-
 const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [modal,      setModal]      = useState(null);
   const [saved,      setSaved]      = useState(false);
-  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
   const [showPin,    setShowPin]    = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);
   const [konModal,   setKonModal]   = useState(false);
@@ -272,13 +265,13 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   };
 
   const openAdd = () => {
-    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppeId:'', dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
     setShowPin(false); setSaved(false); setModal('add');
   };
 
   const openEdit = p => {
     const u = findLogin(p.name);
-    setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'', dienste:p.dienste||[], pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
+    setForm({ name:p.name, farbe:p.farbe, gruppenIds:p.gruppenIds||(p.gruppeId?[p.gruppeId]:[]), dienste:p.dienste||[], pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
     setShowPin(false); setSaved(false);
     setModal({ mode:'edit', id:p.id, oldName:p.name });
   };
@@ -289,25 +282,31 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
     // 1. Save / update person in ma data
     if (modal === 'add') {
-      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppeId:form.gruppeId, dienste:form.dienste||[] }] }));
+      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[] }] }));
     } else {
       onChange(m => ({ ...m, personen: m.personen.map(p =>
-        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppeId:form.gruppeId, dienste:form.dienste||[] } : p
+        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[] } : p
       )}));
       if (modal.oldName !== name) {
         const oldLogin = findLogin(modal.oldName);
-        if (oldLogin) await db.collection('k21-users').doc(oldLogin.id).update({ name });
+        if (oldLogin) await db.collection('k21-users').doc(oldLogin.id).update({ name }).catch(()=>{});
       }
     }
 
     // 2. Sync login profile to k21-users if PIN provided
-    if (form.pin.trim()) {
-      const loginData = { pin:form.pin, role:form.role, areaAccess:form.areaAccess||{}, areaGroups:form.areaGroups||{}, permissions:{} };
-      const existing = findLogin(name);
-      if (existing) {
-        await db.collection('k21-users').doc(existing.id).update({ name, ...loginData });
-      } else {
-        await db.collection('k21-users').add({ name, ...loginData, createdAt:new Date().toISOString() });
+    const pinVal = form.pin.trim();
+    if (pinVal) {
+      const loginData = { pin:pinVal, role:form.role, areaAccess:form.areaAccess||{}, areaGroups:form.areaGroups||{}, permissions:{} };
+      try {
+        const existing = findLogin(name);
+        if (existing) {
+          await db.collection('k21-users').doc(existing.id).update({ name, ...loginData });
+        } else {
+          await db.collection('k21-users').add({ name, ...loginData, createdAt:new Date().toISOString() });
+        }
+      } catch(e) {
+        toast('Login-Sync fehlgeschlagen – bitte nochmal speichern', 'error');
+        return;
       }
     }
 
@@ -336,7 +335,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold grad">Personen</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{(allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen).length} Mitarbeiter</p>
+          <p className="text-slate-500 text-sm mt-0.5">{(allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen).length} Mitarbeiter</p>
         </div>
         {onChange && (
           <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
@@ -346,7 +345,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
       </div>
 
       {(() => {
-        const visPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+        const visPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
         return visPersonen.length === 0 ? (
           <div className="glass rounded-2xl py-16 text-center">
             <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
@@ -355,7 +354,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {visPersonen.map(p => {
-            const gruppe = ma.gruppen.find(g => g.id===p.gruppeId);
+            const gruppen = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
             const hasLogin = !!findLogin(p.name);
             return (
               <div key={p.id} className="glass glass-hover rounded-2xl p-4 flex items-center gap-3">
@@ -369,7 +368,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                       </span>
                     )}
                   </div>
-                  {gruppe && <div className="text-xs mt-0.5" style={{color:gruppe.farbe}}>{gruppe.name}</div>}
+                  {gruppen.length>0 && <div className="flex gap-1.5 flex-wrap mt-0.5">{gruppen.map(g=><span key={g.id} className="text-xs font-medium" style={{color:g.farbe}}>{g.name}</span>)}</div>}
                 </div>
                 {onChange && <>
                   <button onClick={() => openEdit(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all"><SI p={IC.edit} size={12}/></button>
@@ -384,12 +383,15 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
       {/* ── Konflikte ── */}
       {onChange && (() => {
-        const visPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+        const visPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
         const visKonflikte = (ma.konflikte||[]).filter(k => {
           const pa = ma.personen.find(p=>p.id===k.p1);
           const pb = ma.personen.find(p=>p.id===k.p2);
           if (!pa||!pb) return false;
-          if (allowedGroups) return allowedGroups.includes(pa.gruppeId) && allowedGroups.includes(pb.gruppeId);
+          if (allowedGroups) {
+            const ag=(pa.gruppenIds||(pa.gruppeId?[pa.gruppeId]:[])), bg=(pb.gruppenIds||(pb.gruppeId?[pb.gruppeId]:[]));
+            return ag.some(g=>allowedGroups.includes(g))&&bg.some(g=>allowedGroups.includes(g));
+          }
           return true;
         });
         return (
@@ -433,7 +435,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
           <div className="space-y-4">
             <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
             {(() => {
-              const kPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+              const kPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
               return (<>
                 <div>
                   <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
@@ -489,37 +491,53 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                   className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&save()}/>
               </div>
               <div>
-                <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
-                <select value={form.gruppeId} onChange={e=>{ set('gruppeId',e.target.value); set('dienste',[]); }} className={"w-full "+INP}>
-                  <option value="">— Keine Gruppe —</option>
-                  {(allowedGroups ? ma.gruppen.filter(g=>allowedGroups.includes(g.id)) : ma.gruppen).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
+                <label className="text-slate-400 text-xs block mb-1.5">Gruppen</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(allowedGroups ? ma.gruppen.filter(g=>allowedGroups.includes(g.id)) : ma.gruppen).map(g => {
+                    const on = (form.gruppenIds||[]).includes(g.id);
+                    return (
+                      <button key={g.id} type="button"
+                        onClick={()=>{
+                          const cur=form.gruppenIds||[];
+                          const next=on?cur.filter(x=>x!==g.id):[...cur,g.id];
+                          set('gruppenIds',next);
+                          set('dienste',[]);
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
+                        style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                  {ma.gruppen.length===0 && <span className="text-slate-400 text-xs italic">Noch keine Gruppen</span>}
+                </div>
               </div>
-              {form.gruppeId && (() => {
-                const grp = ma.gruppen.find(g=>g.id===form.gruppeId);
-                if (!grp||(grp.dienste||[]).length===0) return null;
+              {(form.gruppenIds||[]).length>0 && (() => {
+                const allDienste=[];const seen=new Set();
+                (form.gruppenIds||[]).forEach(gid=>{
+                  const grp=ma.gruppen.find(g=>g.id===gid);
+                  (grp?.dienste||[]).forEach(d=>{ if(!seen.has(d.id)){seen.add(d.id);allDienste.push({...d,grp});} });
+                });
+                if(allDienste.length===0) return null;
                 return (
                   <div>
                     <label className="text-slate-400 text-xs block mb-1.5">
-                      Erlaubte Dienste <span className="text-slate-500 font-normal">(leer = alle)</span>
+                      Erlaubte Dienste <span className="text-slate-500 font-normal">(leer = keine)</span>
                     </label>
                     <div className="flex flex-wrap gap-1.5">
-                      {grp.dienste.map(d => {
-                        const on = (form.dienste||[]).includes(d.id);
+                      {allDienste.map(({id,name,grp}) => {
+                        const on=(form.dienste||[]).includes(id);
                         return (
-                          <button key={d.id} type="button"
-                            onClick={()=>{
-                              const cur=form.dienste||[];
-                              set('dienste', on?cur.filter(x=>x!==d.id):[...cur,d.id]);
-                            }}
+                          <button key={id} type="button"
+                            onClick={()=>{ const cur=form.dienste||[]; set('dienste',on?cur.filter(x=>x!==id):[...cur,id]); }}
                             className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
                             style={on?{background:grp.farbe+'22',color:grp.farbe,borderColor:grp.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
-                            {d.name}
+                            {name}
                           </button>
                         );
                       })}
                     </div>
-                    {(form.dienste||[]).length===0 && <p className="text-slate-400 text-xs mt-1">Alle Dienste erlaubt</p>}
+                    {(form.dienste||[]).length===0 && <p className="text-slate-400 text-xs mt-1">Kein Dienst ausgewählt</p>}
                   </div>
                 );
               })()}
@@ -560,53 +578,53 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                         ))}
                       </div>
                     </div>
-                    {(form.role==='editor'||form.role==='viewer') && (() => {
-                      const pr = PROFILES.find(p=>p.id===profile);
-                      if (!pr) return null;
-                      const acc = (form.areaAccess||{})[pr.id]??'edit';
-                      return (
-                        <div className="space-y-2">
-                          <label className="text-slate-400 text-xs block">Bereich-Zugang</label>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:pr.color}}/>
-                              <span className="text-slate-700 text-xs font-semibold">{pr.label}</span>
-                              <div className="flex gap-1 flex-1">
-                                {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
-                                  <button key={lvl} type="button"
-                                    onClick={()=>set('areaAccess',{...form.areaAccess,[pr.id]:lvl})}
-                                    className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
-                                    {lbl}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            {acc==='edit' && (ma?.gruppen||[]).length>0 && (
-                              <div className="ml-5 mt-1.5 flex flex-wrap gap-1.5 items-center">
-                                <span className="text-slate-400 text-xs flex-shrink-0">Teams:</span>
-                                {(ma.gruppen||[]).map(g => {
-                                  const selGrp = ((form.areaGroups||{})[pr.id]||[]);
-                                  const on = selGrp.includes(g.id);
-                                  return (
-                                    <button key={g.id} type="button"
-                                      onClick={()=>{
-                                        const cur = ((form.areaGroups||{})[pr.id]||[]);
-                                        const next = on?cur.filter(x=>x!==g.id):[...cur,g.id];
-                                        set('areaGroups',{...form.areaGroups,[pr.id]:next});
-                                      }}
-                                      className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
-                                      style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
-                                      {g.name}
+                    {(form.role==='editor'||form.role==='viewer') && (
+                      <div className="space-y-2">
+                        <label className="text-slate-400 text-xs block">Bereich-Zugang</label>
+                        {PROFILES.map(pr => {
+                          const acc=(form.areaAccess||{})[pr.id]??'none';
+                          return (
+                            <div key={pr.id}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:pr.color}}/>
+                                <span className="text-slate-700 text-xs font-semibold">{pr.label}</span>
+                                <div className="flex gap-1 flex-1">
+                                  {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
+                                    <button key={lvl} type="button"
+                                      onClick={()=>set('areaAccess',{...form.areaAccess,[pr.id]:lvl})}
+                                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                                      {lbl}
                                     </button>
-                                  );
-                                })}
-                                <span className="text-slate-400 text-xs">({((form.areaGroups||{})[pr.id]||[]).length===0?'Alle':((form.areaGroups||{})[pr.id]||[]).length+' ausgewählt'})</span>
+                                  ))}
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                              {acc==='edit' && pr.id===profile && (ma?.gruppen||[]).length>0 && (
+                                <div className="ml-5 mt-1.5 flex flex-wrap gap-1.5 items-center">
+                                  <span className="text-slate-400 text-xs flex-shrink-0">Teams:</span>
+                                  {(ma.gruppen||[]).map(g => {
+                                    const selGrp=((form.areaGroups||{})[pr.id]||[]);
+                                    const on=selGrp.includes(g.id);
+                                    return (
+                                      <button key={g.id} type="button"
+                                        onClick={()=>{
+                                          const cur=((form.areaGroups||{})[pr.id]||[]);
+                                          const next=on?cur.filter(x=>x!==g.id):[...cur,g.id];
+                                          set('areaGroups',{...form.areaGroups,[pr.id]:next});
+                                        }}
+                                        className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
+                                        style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                                        {g.name}
+                                      </button>
+                                    );
+                                  })}
+                                  <span className="text-slate-400 text-xs">({((form.areaGroups||{})[pr.id]||[]).length===0?'Alle':((form.areaGroups||{})[pr.id]||[]).length+' ausgewählt'})</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>)}
                 </div>
               </div>
@@ -648,7 +666,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
 
   const delGruppe = g => {
     onChange(m => ({ ...m, gruppen: m.gruppen.filter(x=>x.id!==g.id) }));
-    if (onChangeShared) onChangeShared(s => ({ ...s, personen: (s.personen||[]).map(p=>p.gruppeId===g.id?{...p,gruppeId:''}:p) }));
+    if (onChangeShared) onChangeShared(s => ({ ...s, personen: (s.personen||[]).map(p=>({...p,gruppenIds:(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).filter(x=>x!==g.id)})) }));
     toast('Gruppe gelöscht', 'warn');
   };
 
@@ -686,7 +704,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
       ) : (
         <div className="space-y-4">
           {ma.gruppen.map(g => {
-            const members = ma.personen.filter(p=>p.gruppeId===g.id);
+            const members = ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(g.id));
             return (
               <div key={g.id} className="glass rounded-2xl p-4 glow">
                 <div className="flex items-center gap-3 mb-3">
@@ -980,7 +998,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
       // Skip slots whose group the user has no access to
       if (allowedGroups && !allowedGroups.includes(sl.gruppeId)) return {...sl};
       const eligible = ma.personen.filter(p => {
-        if (p.gruppeId !== sl.gruppeId) return false;
+        if (!(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(sl.gruppeId)) return false;
         if ((p.dienste||[]).length>0 && !(p.dienste||[]).includes(sl.dienstId)) return false;
         const w = (selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
         return w?.art !== 'wunschfrei';
@@ -1013,7 +1031,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
       const newSlots = s.slots.map(sl=>{
         if(allowedGroups&&!allowedGroups.includes(sl.gruppeId)) return {...sl};
         const eligible = ma.personen.filter(p=>{
-          if(p.gruppeId!==sl.gruppeId) return false;
+          if(!(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(sl.gruppeId)) return false;
           if((p.dienste||[]).length>0&&!(p.dienste||[]).includes(sl.dienstId)) return false;
           const w=(s.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
           return w?.art!=='wunschfrei';
@@ -1244,7 +1262,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
         <div className="glass rounded-2xl p-4">
           <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Wünsche bearbeiten</div>
           <div className="flex flex-wrap gap-2">
-            {ma.personen.filter(p => ma.gruppen.some(g=>g.id===p.gruppeId&&selSchicht.slots.some(sl=>sl.gruppeId===g.id))).map(p => {
+            {ma.personen.filter(p => { const gids=p.gruppenIds||(p.gruppeId?[p.gruppeId]:[]);return ma.gruppen.some(g=>gids.includes(g.id)&&selSchicht.slots.some(sl=>sl.gruppeId===g.id)); }).map(p => {
               const myWishes = (selSchicht.wuensche||[]).filter(w=>w.personId===p.id);
               return (
                 <button key={p.id} onClick={() => {
@@ -1269,7 +1287,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
       {modal==='assign' && selSlot && (() => {
         const g = ma.gruppen.find(x=>x.id===selSlot.gruppeId);
         const d = (g?.dienste||[]).find(x=>x.id===selSlot.dienstId);
-        const eligible = ma.personen.filter(p=>p.gruppeId===selSlot.gruppeId);
+        const eligible = ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(selSlot.gruppeId));
         const cur = selSlot.isSecond ? selSlot.personId2 : selSlot.personId;
         return (
           <Modal title={`Zuweisen: ${d?.name||'?'}`} onClose={() => setModal(null)}>
@@ -1299,7 +1317,8 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
       {/* Wish Modal */}
       {modal==='wish' && wishPid && (() => {
         const person = ma.personen.find(p=>p.id===wishPid);
-        const relSlots = selSchicht.slots.filter(sl=>sl.gruppeId===person?.gruppeId);
+        const personGrpIds=person?.gruppenIds||(person?.gruppeId?[person.gruppeId]:[]);
+        const relSlots = selSchicht.slots.filter(sl=>personGrpIds.includes(sl.gruppeId));
         return (
           <Modal title={`Wünsche: ${person?.name||'?'}`} onClose={() => setModal(null)}>
             <div className="space-y-3">
@@ -1406,7 +1425,7 @@ const StatistikView = ({ ma }) => {
       ) : (
         <div className="space-y-3">
           {stats.map(({ p, total, byDienst }) => {
-            const gruppe = ma.gruppen.find(g=>g.id===p.gruppeId);
+            const gruppen2 = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
             const pct = Math.round((total/maxVal)*100);
             return (
               <div key={p.id} className="glass rounded-2xl p-4 glow">
@@ -1414,7 +1433,7 @@ const StatistikView = ({ ma }) => {
                   <Avatar name={p.name} farbe={p.farbe} size={36}/>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
-                    {gruppe&&<div className="text-xs" style={{color:gruppe.farbe}}>{gruppe.name}</div>}
+                    {gruppen2.length>0&&<div className="flex gap-1.5 flex-wrap">{gruppen2.map(g=><span key={g.id} className="text-xs" style={{color:g.farbe}}>{g.name}</span>)}</div>}
                   </div>
                   <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
                 </div>
@@ -1817,9 +1836,11 @@ const LoginScreen = ({ onLogin }) => {
   const [dropOpen, setDropOpen]= useState(false);
 
   useEffect(() => {
-    db.collection('k21-users').get()
-      .then(snap => { setUsers(snap.docs.map(d=>({id:d.id,...d.data()}))); setReady(true); })
-      .catch(() => setReady(true));
+    const unsub = db.collection('k21-users').onSnapshot(
+      snap => { setUsers(snap.docs.map(d=>({id:d.id,...d.data()}))); setReady(true); },
+      () => setReady(true)
+    );
+    return () => unsub();
   }, []);
 
   const allNames = [OWNER_NAME, ...users.map(u=>u.name)];
@@ -1910,7 +1931,10 @@ const App = () => {
   const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
   const [sharedMa,  setSharedMa]  = useState(() => loadJSON('ma-data-shared', DEFAULT_SHARED()));
   const [page,      setPage]      = useState('dienstplan');
-  const [syncState, setSyncState] = useState('connecting');
+  const [syncState, setSyncState] = useState(() => {
+    const key = `ma-data-${localStorage.getItem('ma-profile')||'revive'}`;
+    return localStorage.getItem(key) ? 'synced' : 'connecting';
+  });
   const [toasts,    setToasts]    = useState([]);
 
   const p           = perms(currentUser);
@@ -1966,9 +1990,10 @@ const App = () => {
   };
 
   useEffect(() => {
-    setSyncState('connecting');
     const localKey = `ma-data-${profile}`;
-    setMa(loadJSON(localKey, DEFAULT_MA()));
+    const cached = localStorage.getItem(localKey);
+    setSyncState(cached ? 'synced' : 'connecting');
+    setMa(cached ? JSON.parse(cached) : DEFAULT_MA());
     const unsub = db.collection(profile).doc('ma').onSnapshot(
       { includeMetadataChanges:true },
       snap => {
