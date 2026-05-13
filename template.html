@@ -86,7 +86,8 @@ const loadJSON = (key, fb) => { try { const s = localStorage.getItem(key); retur
 const initials = n => (n||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA = () => ({ personen:[], gruppen:[], vorlagen:[], schichten:[], konflikte:[] });
+const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[] });
+const DEFAULT_SHARED = () => ({ personen:[], konflikte:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 
@@ -540,7 +541,7 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // GRUPPEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const GruppenView = ({ ma, onChange, toast }) => {
+const GruppenView = ({ ma, onChange, onChangeShared, toast }) => {
   const [modal,      setModal]      = useState(null);
   const [form,       setForm]       = useState({ name:'', farbe:'#6366f1' });
   const [newDienst,  setNewDienst]  = useState({});
@@ -561,7 +562,8 @@ const GruppenView = ({ ma, onChange, toast }) => {
   };
 
   const delGruppe = g => {
-    onChange(m => ({ ...m, gruppen: m.gruppen.filter(x=>x.id!==g.id), personen: m.personen.map(p=>p.gruppeId===g.id?{...p,gruppeId:''}:p) }));
+    onChange(m => ({ ...m, gruppen: m.gruppen.filter(x=>x.id!==g.id) }));
+    if (onChangeShared) onChangeShared(s => ({ ...s, personen: (s.personen||[]).map(p=>p.gruppeId===g.id?{...p,gruppeId:''}:p) }));
     toast('Gruppe gelöscht', 'warn');
   };
 
@@ -1282,7 +1284,7 @@ const StatistikView = ({ ma }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, toast, profile }) => {
+const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile }) => {
   const [pin,    setPin]    = useState('');
   const [pin2,   setPin2]   = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -1312,8 +1314,11 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
     r.onload = ev => {
       try {
         const d = JSON.parse(ev.target.result);
-        if (!d.personen||!d.gruppen) throw new Error();
-        onChange(d); toast('Daten importiert ✓');
+        if (!d.gruppen) throw new Error();
+        onChange({ gruppen:d.gruppen||[], vorlagen:d.vorlagen||[], schichten:d.schichten||[] });
+        if (onChangeShared && (d.personen||d.konflikte))
+          onChangeShared({ personen:d.personen||[], konflikte:d.konflikte||[] });
+        toast('Daten importiert ✓');
       } catch { toast('Ungültige JSON-Datei','error'); }
     };
     r.readAsText(f); e.target.value='';
@@ -1321,7 +1326,9 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
 
   const resetAll = () => {
     if (!confirm('Alle Mitarbeiterdaten wirklich zurücksetzen?\n\nDies kann nicht rückgängig gemacht werden.')) return;
-    onChange(DEFAULT_MA()); toast('Zurückgesetzt','warn');
+    onChange(DEFAULT_MA());
+    if (onChangeShared) onChangeShared(DEFAULT_SHARED());
+    toast('Zurückgesetzt','warn');
   };
 
   return (
@@ -1745,6 +1752,7 @@ const App = () => {
   });
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
   const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
+  const [sharedMa,  setSharedMa]  = useState(() => loadJSON('ma-data-shared', DEFAULT_SHARED()));
   const [page,      setPage]      = useState('dienstplan');
   const [syncState, setSyncState] = useState('connecting');
   const [toasts,    setToasts]    = useState([]);
@@ -1792,7 +1800,7 @@ const App = () => {
     }
   }, [visibleProfiles]);
 
-  // Firebase Sync
+  // Firebase Sync — per-profile (gruppen, vorlagen, schichten)
   const writeMa = data => {
     setSyncState('saving');
     localStorage.setItem(`ma-data-${profile}`, JSON.stringify(data));
@@ -1810,7 +1818,11 @@ const App = () => {
       snap => {
         if (snap.metadata.hasPendingWrites) return;
         const data = snap.data()?.data;
-        if (data) { localStorage.setItem(localKey, JSON.stringify(data)); setMa(data); }
+        if (data) {
+          const { gruppen=[], vorlagen=[], schichten=[] } = data;
+          const clean = { gruppen, vorlagen, schichten };
+          localStorage.setItem(localKey, JSON.stringify(clean)); setMa(clean);
+        }
         setSyncState('synced');
       },
       () => setSyncState('error')
@@ -1824,12 +1836,40 @@ const App = () => {
     writeMa(next);
   };
 
+  // Firebase Sync — shared personen + konflikte (cross-profile)
+  const writeSharedMa = data => {
+    localStorage.setItem('ma-data-shared', JSON.stringify(data));
+    db.collection('shared').doc('ma').set({ data }).catch(()=>{});
+  };
+
+  useEffect(() => {
+    const unsub = db.collection('shared').doc('ma').onSnapshot(
+      { includeMetadataChanges:true },
+      snap => {
+        if (snap.metadata.hasPendingWrites) return;
+        const data = snap.data()?.data;
+        if (data) { localStorage.setItem('ma-data-shared', JSON.stringify(data)); setSharedMa(data); }
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
+
+  const updateSharedMa = updater => {
+    const next = typeof updater==='function' ? updater(sharedMa) : updater;
+    setSharedMa(next);
+    writeSharedMa(next);
+  };
+
+  // Merged view used by all child components
+  const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[] };
+
   if (currentUser === undefined) return <LoginScreen onLogin={login}/>;
 
   const TABS = [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
+    ...(p.edit ? [{ id:'personen', label:'Personen', icon:IC.person }] : []),
     ...(canEdit ? [
-      { id:'personen',  label:'Personen',  icon:IC.person },
       { id:'gruppen',   label:'Gruppen',   icon:IC.users  },
       { id:'vorlagen',  label:'Vorlagen',  icon:IC.layers },
       { id:'statistik', label:'Statistik', icon:IC.chart  },
@@ -1898,12 +1938,12 @@ const App = () => {
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
-        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
-        {page==='personen'      && <PersonenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast} profile={profile}/>}
-        {page==='gruppen'       && <GruppenView    ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
-        {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
-        {page==='statistik'     && <StatistikView  ma={ma}/>}
-        {page==='einstellungen' && canSettings  && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
+        {page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
+        {page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile}/>}
+        {page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast}/>}
+        {page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='statistik'     && <StatistikView  ma={fullMa}/>}
+        {page==='einstellungen' && canSettings  && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile}/>}
       </main>
     </div>
   );
