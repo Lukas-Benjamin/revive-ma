@@ -241,7 +241,7 @@ const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-
 // ═══════════════════════════════════════════════════════════════════════════════
 // PERSONEN VIEW  (unified with login profiles + permissions)
 // ═══════════════════════════════════════════════════════════════════════════════
-const PersonenView = ({ ma, onChange, toast, profile }) => {
+const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [modal,      setModal]      = useState(null);
   const [saved,      setSaved]      = useState(false);
   const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
@@ -335,7 +335,7 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold grad">Personen</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{ma.personen.length} Mitarbeiter</p>
+          <p className="text-slate-500 text-sm mt-0.5">{(allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen).length} Mitarbeiter</p>
         </div>
         {onChange && (
           <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
@@ -344,14 +344,16 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
         )}
       </div>
 
-      {ma.personen.length === 0 ? (
-        <div className="glass rounded-2xl py-16 text-center">
-          <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
-          {onChange && <button onClick={openAdd} className="mt-2 text-slate-700 hover:text-slate-900 text-sm">Person hinzufügen</button>}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {ma.personen.map(p => {
+      {(() => {
+        const visPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+        return visPersonen.length === 0 ? (
+          <div className="glass rounded-2xl py-16 text-center">
+            <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
+            {onChange && !allowedGroups && <button onClick={openAdd} className="mt-2 text-slate-700 hover:text-slate-900 text-sm">Person hinzufügen</button>}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {visPersonen.map(p => {
             const gruppe = ma.gruppen.find(g => g.id===p.gruppeId);
             const hasLogin = !!findLogin(p.name);
             return (
@@ -375,64 +377,79 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
               </div>
             );
           })}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* ── Konflikte ── */}
-      {onChange && (
-        <div className="glass rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-800 text-sm font-semibold">Konflikte</p>
-              <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden sollen</p>
-            </div>
-            <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={ma.personen.length<2}
-              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
-              <SI p={IC.plus} size={12}/> Konflikt
-            </button>
-          </div>
-          {(ma.konflikte||[]).length===0 && (
-            <p className="text-slate-400 text-xs text-center py-3">Keine Konflikte definiert</p>
-          )}
-          {(ma.konflikte||[]).map(k => {
-            const pa = ma.personen.find(p=>p.id===k.p1);
-            const pb = ma.personen.find(p=>p.id===k.p2);
-            if (!pa||!pb) return null;
-            return (
-              <div key={k.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.12)'}}>
-                <Avatar name={pa.name} farbe={pa.farbe} size={26}/>
-                <span className="text-slate-700 text-xs font-semibold truncate">{pa.name}</span>
-                <span className="text-red-400 text-xs font-bold flex-shrink-0">✕</span>
-                <Avatar name={pb.name} farbe={pb.farbe} size={26}/>
-                <span className="text-slate-700 text-xs font-semibold truncate">{pb.name}</span>
-                {k.note && <span className="text-slate-400 text-xs truncate flex-1">· {k.note}</span>}
-                <button onClick={()=>onChange(m=>({...m,konflikte:(m.konflikte||[]).filter(x=>x.id!==k.id)}))}
-                  className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>
+      {onChange && (() => {
+        const visPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+        const visKonflikte = (ma.konflikte||[]).filter(k => {
+          const pa = ma.personen.find(p=>p.id===k.p1);
+          const pb = ma.personen.find(p=>p.id===k.p2);
+          if (!pa||!pb) return false;
+          if (allowedGroups) return allowedGroups.includes(pa.gruppeId) && allowedGroups.includes(pb.gruppeId);
+          return true;
+        });
+        return (
+          <div className="glass rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-slate-800 text-sm font-semibold">Konflikte</p>
+                <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden sollen</p>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={visPersonen.length<2}
+                className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+                <SI p={IC.plus} size={12}/> Konflikt
+              </button>
+            </div>
+            {visKonflikte.length===0 && (
+              <p className="text-slate-400 text-xs text-center py-3">Keine Konflikte definiert</p>
+            )}
+            {visKonflikte.map(k => {
+              const pa = ma.personen.find(p=>p.id===k.p1);
+              const pb = ma.personen.find(p=>p.id===k.p2);
+              return (
+                <div key={k.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.12)'}}>
+                  <Avatar name={pa.name} farbe={pa.farbe} size={26}/>
+                  <span className="text-slate-700 text-xs font-semibold truncate">{pa.name}</span>
+                  <span className="text-red-400 text-xs font-bold flex-shrink-0">✕</span>
+                  <Avatar name={pb.name} farbe={pb.farbe} size={26}/>
+                  <span className="text-slate-700 text-xs font-semibold truncate">{pb.name}</span>
+                  {k.note && <span className="text-slate-400 text-xs truncate flex-1">· {k.note}</span>}
+                  <button onClick={()=>onChange(m=>({...m,konflikte:(m.konflikte||[]).filter(x=>x.id!==k.id)}))}
+                    className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Konflikt-Modal */}
       {konModal && (
         <Modal title="Konflikt hinzufügen" onClose={()=>setKonModal(false)}>
           <div className="space-y-4">
             <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
-            <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
-              <select value={konForm.p1} onChange={e=>setKonForm(f=>({...f,p1:e.target.value,p2:f.p2===e.target.value?'':f.p2}))} className={"w-full "+INP}>
-                <option value="">— auswählen —</option>
-                {ma.personen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Person 2 *</label>
-              <select value={konForm.p2} onChange={e=>setKonForm(f=>({...f,p2:e.target.value}))} className={"w-full "+INP}>
-                <option value="">— auswählen —</option>
-                {ma.personen.filter(p=>p.id!==konForm.p1).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
+            {(() => {
+              const kPersonen = allowedGroups ? ma.personen.filter(p=>allowedGroups.includes(p.gruppeId)) : ma.personen;
+              return (<>
+                <div>
+                  <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
+                  <select value={konForm.p1} onChange={e=>setKonForm(f=>({...f,p1:e.target.value,p2:f.p2===e.target.value?'':f.p2}))} className={"w-full "+INP}>
+                    <option value="">— auswählen —</option>
+                    {kPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs block mb-1.5">Person 2 *</label>
+                  <select value={konForm.p2} onChange={e=>setKonForm(f=>({...f,p2:e.target.value}))} className={"w-full "+INP}>
+                    <option value="">— auswählen —</option>
+                    {kPersonen.filter(p=>p.id!==konForm.p1).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              </>);
+            })()}
             <div>
               <label className="text-slate-400 text-xs block mb-1.5">Grund (optional)</label>
               <input value={konForm.note} onChange={e=>setKonForm(f=>({...f,note:e.target.value}))}
@@ -474,7 +491,7 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
                 <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
                 <select value={form.gruppeId} onChange={e=>{ set('gruppeId',e.target.value); set('dienste',[]); }} className={"w-full "+INP}>
                   <option value="">— Keine Gruppe —</option>
-                  {ma.gruppen.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  {(allowedGroups ? ma.gruppen.filter(g=>allowedGroups.includes(g.id)) : ma.gruppen).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </div>
               {form.gruppeId && (() => {
@@ -2077,7 +2094,7 @@ const App = () => {
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
         {page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
-        {page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile}/>}
+        {page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
         {page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast}/>}
         {page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={fullMa}/>}
