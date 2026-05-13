@@ -10,6 +10,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script>
@@ -76,6 +77,8 @@ const IC = {
   eye:       ["M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z","M12 9a3 3 0 100 6 3 3 0 000-6z"],
   eyeOff:    "M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22",
   warn:      ["M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z","M12 9v4M12 17h.01"],
+  copy:      ["M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1","M8 5a2 2 0 002 2h4a2 2 0 002-2M8 5a2 2 0 012-2h4a2 2 0 012 2"],
+  printer:   ["M6 9V2h12v7","M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2","M6 14h12v8H6z"],
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -84,6 +87,42 @@ const today   = () => new Date().toISOString().split('T')[0];
 const fmtDe   = d => { if (!d) return ''; const [y,m,dd] = d.split('-'); return `${dd}.${m}.${y}`; };
 const loadJSON = (key, fb) => { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fb; } catch { return fb; } };
 const initials = n => (n||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
+
+// ─── Export helpers ───────────────────────────────────────────────────────────
+const exportExcelPlan = (ma, profileLabel, single) => {
+  const wb = XLSX.utils.book_new();
+  const schichten = single ? [single] : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum));
+  const rows = [['Datum','Titel','Gruppe','Dienst','Person 1','Person 2']];
+  schichten.forEach(s => {
+    s.slots.forEach(sl => {
+      const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
+      const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+      const p1 = ma.personen.find(x=>x.id===sl.personId);
+      const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
+      rows.push([fmtDe(s.datum), s.titel||'', g?.name||'', d?.name||'', p1?.name||'—', p2?.name||'']);
+    });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:12},{wch:22},{wch:16},{wch:18},{wch:20},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Dienstplan');
+  XLSX.writeFile(wb, `dienstplan-${profileLabel}-${today()}.xlsx`);
+};
+
+const buildPlanText = (ma, single) => {
+  const schichten = single ? [single] : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum));
+  return schichten.map(s => {
+    const header = `📅 *${s.titel||fmtDe(s.datum)}* — ${fmtDe(s.datum)}`;
+    const lines = s.slots.map(sl => {
+      const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
+      const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+      const p1 = ma.personen.find(x=>x.id===sl.personId);
+      const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
+      const names = [p1?.name, p2?.name].filter(Boolean).join(' & ') || '—';
+      return `• ${d?.name||'?'}: ${names}`;
+    });
+    return [header, ...lines].join('\n');
+  }).join('\n\n');
+};
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
 const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[] });
@@ -205,7 +244,7 @@ const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-
 const PersonenView = ({ ma, onChange, toast, profile }) => {
   const [modal,      setModal]      = useState(null);
   const [saved,      setSaved]      = useState(false);
-  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
   const [showPin,    setShowPin]    = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);
   const [konModal,   setKonModal]   = useState(false);
@@ -232,13 +271,13 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
   };
 
   const openAdd = () => {
-    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppeId:'', pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppeId:'', dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
     setShowPin(false); setSaved(false); setModal('add');
   };
 
   const openEdit = p => {
     const u = findLogin(p.name);
-    setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'', pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
+    setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'', dienste:p.dienste||[], pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
     setShowPin(false); setSaved(false);
     setModal({ mode:'edit', id:p.id, oldName:p.name });
   };
@@ -249,10 +288,10 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
 
     // 1. Save / update person in ma data
     if (modal === 'add') {
-      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppeId:form.gruppeId }] }));
+      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppeId:form.gruppeId, dienste:form.dienste||[] }] }));
     } else {
       onChange(m => ({ ...m, personen: m.personen.map(p =>
-        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppeId:form.gruppeId } : p
+        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppeId:form.gruppeId, dienste:form.dienste||[] } : p
       )}));
       if (modal.oldName !== name) {
         const oldLogin = findLogin(modal.oldName);
@@ -433,11 +472,39 @@ const PersonenView = ({ ma, onChange, toast, profile }) => {
               </div>
               <div>
                 <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
-                <select value={form.gruppeId} onChange={e=>set('gruppeId',e.target.value)} className={"w-full "+INP}>
+                <select value={form.gruppeId} onChange={e=>{ set('gruppeId',e.target.value); set('dienste',[]); }} className={"w-full "+INP}>
                   <option value="">— Keine Gruppe —</option>
                   {ma.gruppen.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
               </div>
+              {form.gruppeId && (() => {
+                const grp = ma.gruppen.find(g=>g.id===form.gruppeId);
+                if (!grp||(grp.dienste||[]).length===0) return null;
+                return (
+                  <div>
+                    <label className="text-slate-400 text-xs block mb-1.5">
+                      Erlaubte Dienste <span className="text-slate-500 font-normal">(leer = alle)</span>
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {grp.dienste.map(d => {
+                        const on = (form.dienste||[]).includes(d.id);
+                        return (
+                          <button key={d.id} type="button"
+                            onClick={()=>{
+                              const cur=form.dienste||[];
+                              set('dienste', on?cur.filter(x=>x!==d.id):[...cur,d.id]);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
+                            style={on?{background:grp.farbe+'22',color:grp.farbe,borderColor:grp.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                            {d.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(form.dienste||[]).length===0 && <p className="text-slate-400 text-xs mt-1">Alle Dienste erlaubt</p>}
+                  </div>
+                );
+              })()}
               <div>
                 <label className="text-slate-400 text-xs block mb-2">Farbe</label>
                 <ColorPicker value={form.farbe} onChange={c=>set('farbe',c)}/>
@@ -810,6 +877,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
   const [wishPid,      setWishPid]     = useState('');
   const [wishForm,     setWishForm]    = useState({});
   const [shareText,    setShareText]   = useState('');
+  const [shareScope,   setShareScope]  = useState('single'); // 'single'|'all'
   const [createForm,   setCreateForm]  = useState({ datum:today(), titel:'', vorlageId:'' });
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
@@ -895,6 +963,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
       if (allowedGroups && !allowedGroups.includes(sl.gruppeId)) return {...sl};
       const eligible = ma.personen.filter(p => {
         if (p.gruppeId !== sl.gruppeId) return false;
+        if ((p.dienste||[]).length>0 && !(p.dienste||[]).includes(sl.dienstId)) return false;
         const w = (selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
         return w?.art !== 'wunschfrei';
       });
@@ -912,6 +981,41 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
     });
     updateSchicht(selSchicht.id, s=>({ ...s, slots:newSlots }));
     toast('Auto-Einteilung abgeschlossen ⚡');
+  };
+
+  const runAutoAll = () => {
+    if (!onChange) return;
+    if (!confirm('Alle Schichten automatisch einteilen?\nBestehende Einteilungen werden überschrieben.')) return;
+    const counts = {};
+    ma.personen.forEach(p=>{ counts[p.id]=0; });
+    const konflikte = ma.konflikte||[];
+    const conflictsWith = (pid, set) => konflikte.some(k=>(k.p1===pid&&set.has(k.p2))||(k.p2===pid&&set.has(k.p1)));
+    const newSchichten = [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>{
+      const usedNow = new Set();
+      const newSlots = s.slots.map(sl=>{
+        if(allowedGroups&&!allowedGroups.includes(sl.gruppeId)) return {...sl};
+        const eligible = ma.personen.filter(p=>{
+          if(p.gruppeId!==sl.gruppeId) return false;
+          if((p.dienste||[]).length>0&&!(p.dienste||[]).includes(sl.dienstId)) return false;
+          const w=(s.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
+          return w?.art!=='wunschfrei';
+        });
+        const pick = excl=>{
+          const ok=p=>!excl.has(p.id)&&!conflictsWith(p.id,usedNow);
+          const wunsch=eligible.filter(p=>{const w=(s.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);return w?.art==='wunschdienst'&&ok(p);});
+          const rest=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id));
+          const pool=[...wunsch,...rest.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0))];
+          if(!pool.length) return '';
+          const p=pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
+        };
+        const p1=pick(new Set(usedNow)); if(p1) usedNow.add(p1);
+        const p2=sl.doppelt?pick(new Set(usedNow)):''; if(p2) usedNow.add(p2);
+        return {...sl,personId:p1,personId2:p2};
+      });
+      return {...s,slots:newSlots};
+    });
+    onChange(m=>({...m,schichten:newSchichten}));
+    toast(`${ma.schichten.length} Schichten auto-eingeteilt ⚡`);
   };
 
   const buildShareText = s => {
@@ -935,12 +1039,20 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
           <h1 className="text-xl font-bold grad">Dienstplan</h1>
           <p className="text-slate-500 text-sm mt-0.5">{ma.schichten.length} Schichten</p>
         </div>
-        {onChange && (
-          <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
+        <div className="flex gap-2">
+          {onChange && <button onClick={runAutoAll} disabled={ma.schichten.length===0}
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            <SI p={IC.zap} size={13}/> Auto-Plan
+          </button>}
+          {ma.schichten.length>0 && <button onClick={()=>{ setShareScope('all'); setShareText(buildPlanText(ma)); setModal('share'); }}
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            <SI p={IC.send} size={13}/> Teilen
+          </button>}
+          {onChange && <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Schicht
-          </button>
-        )}
+          </button>}
+        </div>
       </div>
 
       {sorted.length===0 ? (
@@ -1046,7 +1158,7 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
             <SI p={IC.zap} size={12}/> Auto-Einteilung
           </button>
         </>}
-        <button onClick={() => { setShareText(buildShareText(selSchicht)); setModal('share'); }}
+        <button onClick={()=>{ setShareScope('single'); setShareText(buildPlanText(ma,selSchicht)); setModal('share'); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/8 transition-all">
           <SI p={IC.send} size={12}/> Teilen
         </button>
@@ -1201,14 +1313,40 @@ const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
 
       {/* Share Modal */}
       {modal==='share' && (
-        <Modal title="Schicht teilen" onClose={() => setModal(null)}>
-          <div className="space-y-3">
-            <textarea value={shareText} onChange={e=>setShareText(e.target.value)} rows={10}
-              className={"w-full font-mono text-xs resize-none "+INP}/>
-            <button onClick={() => navigator.clipboard?.writeText(shareText).then(()=>toast('Kopiert!')).catch(()=>alert(shareText))}
-              className="w-full py-2.5 rounded-xl bg-black/8 hover:bg-black/10 text-slate-800 text-sm font-semibold transition-all">
-              📋 In Zwischenablage kopieren
-            </button>
+        <Modal title={shareScope==='all'?'Gesamtplan teilen':'Schicht teilen'} onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            {/* Preview */}
+            <div className="rounded-2xl overflow-auto max-h-48" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.06)'}}>
+              <pre className="text-xs text-slate-700 font-mono whitespace-pre-wrap leading-relaxed p-4">{shareText}</pre>
+            </div>
+            {/* Action buttons */}
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={()=>{ exportExcelPlan(ma, selSchicht?.datum||today(), shareScope==='single'?selSchicht:null); toast('Excel exportiert ✓'); }}
+                className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
+                style={{background:'rgba(16,185,129,0.06)',borderColor:'rgba(16,185,129,0.2)',color:'#059669'}}>
+                <SI p={IC.download} size={18} stroke={1.8}/>
+                <span className="text-xs font-bold">Excel</span>
+              </button>
+              <button onClick={()=>navigator.clipboard?.writeText(shareText).then(()=>toast('Kopiert! 📋')).catch(()=>alert(shareText))}
+                className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
+                style={{background:'rgba(59,130,246,0.06)',borderColor:'rgba(59,130,246,0.2)',color:'#2563eb'}}>
+                <SI p={IC.copy} size={18} stroke={1.8}/>
+                <span className="text-xs font-bold">Kopieren</span>
+              </button>
+              <button onClick={()=>{
+                const w=window.open('','_blank','width=800,height=600');
+                const rows = shareScope==='single'&&selSchicht
+                  ? selSchicht.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')
+                  : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>`<tr><td colspan="4" style="background:#f1f5f9;font-weight:700;padding:10px 12px">${fmtDe(s.datum)}${s.titel?' — '+s.titel:''}</td></tr>`+s.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')).join('');
+                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#0f172a}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#0f172a;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`);
+                w.document.close();
+              }}
+                className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
+                style={{background:'rgba(100,116,139,0.06)',borderColor:'rgba(100,116,139,0.2)',color:'#475569'}}>
+                <SI p={IC.printer} size={18} stroke={1.8}/>
+                <span className="text-xs font-bold">PDF</span>
+              </button>
+            </div>
           </div>
         </Modal>
       )}
