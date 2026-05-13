@@ -86,7 +86,7 @@ const loadJSON = (key, fb) => { try { const s = localStorage.getItem(key); retur
 const initials = n => (n||'').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA = () => ({ personen:[], gruppen:[], vorlagen:[], schichten:[] });
+const DEFAULT_MA = () => ({ personen:[], gruppen:[], vorlagen:[], schichten:[], konflikte:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 
@@ -192,6 +192,9 @@ const PersonenView = ({ ma, onChange, toast }) => {
   const [form,    setForm]    = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', pin:'', role:'viewer' });
   const [showPin, setShowPin] = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);  // k21-users live
+  // Konflikte state
+  const [konModal, setKonModal] = useState(false);
+  const [konForm,  setKonForm]  = useState({ p1:'', p2:'', note:'' });
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   // Live sync from shared login collection
@@ -314,6 +317,82 @@ const PersonenView = ({ ma, onChange, toast }) => {
             );
           })}
         </div>
+      )}
+
+      {/* ── Konflikte ── */}
+      {onChange && (
+        <div className="glass rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-slate-800 text-sm font-semibold">Konflikte</p>
+              <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden sollen</p>
+            </div>
+            <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={ma.personen.length<2}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+              <SI p={IC.plus} size={12}/> Konflikt
+            </button>
+          </div>
+          {(ma.konflikte||[]).length===0 && (
+            <p className="text-slate-400 text-xs text-center py-3">Keine Konflikte definiert</p>
+          )}
+          {(ma.konflikte||[]).map(k => {
+            const pa = ma.personen.find(p=>p.id===k.p1);
+            const pb = ma.personen.find(p=>p.id===k.p2);
+            if (!pa||!pb) return null;
+            return (
+              <div key={k.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.12)'}}>
+                <Avatar name={pa.name} farbe={pa.farbe} size={26}/>
+                <span className="text-slate-700 text-xs font-semibold truncate">{pa.name}</span>
+                <span className="text-red-400 text-xs font-bold flex-shrink-0">✕</span>
+                <Avatar name={pb.name} farbe={pb.farbe} size={26}/>
+                <span className="text-slate-700 text-xs font-semibold truncate">{pb.name}</span>
+                {k.note && <span className="text-slate-400 text-xs truncate flex-1">· {k.note}</span>}
+                <button onClick={()=>onChange(m=>({...m,konflikte:(m.konflikte||[]).filter(x=>x.id!==k.id)}))}
+                  className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Konflikt-Modal */}
+      {konModal && (
+        <Modal title="Konflikt hinzufügen" onClose={()=>setKonModal(false)}>
+          <div className="space-y-4">
+            <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
+              <select value={konForm.p1} onChange={e=>setKonForm(f=>({...f,p1:e.target.value,p2:f.p2===e.target.value?'':f.p2}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {ma.personen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person 2 *</label>
+              <select value={konForm.p2} onChange={e=>setKonForm(f=>({...f,p2:e.target.value}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {ma.personen.filter(p=>p.id!==konForm.p1).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Grund (optional)</label>
+              <input value={konForm.note} onChange={e=>setKonForm(f=>({...f,note:e.target.value}))}
+                placeholder="z. B. Geschwister, persönlicher Konflikt…" className={"w-full "+INP}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={()=>{
+                if(!konForm.p1||!konForm.p2) return;
+                onChange(m=>({...m,konflikte:[...(m.konflikte||[]),{id:genId(),p1:konForm.p1,p2:konForm.p2,note:konForm.note.trim()}]}));
+                toast('Konflikt gespeichert');
+                setKonModal(false);
+              }} disabled={!konForm.p1||!konForm.p2}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                Speichern
+              </button>
+              <button onClick={()=>setKonModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {modal && (
@@ -725,6 +804,14 @@ const DienstplanView = ({ ma, onChange, toast }) => {
       if(sl.personId2) counts[sl.personId2] = (counts[sl.personId2]||0)+1;
     }));
 
+    const konflikte = ma.konflikte || [];
+    // Returns true if pid conflicts with anyone already in the shift
+    const conflictsWith = (pid, alreadyInShift) =>
+      konflikte.some(k =>
+        (k.p1===pid && alreadyInShift.has(k.p2)) ||
+        (k.p2===pid && alreadyInShift.has(k.p1))
+      );
+
     const usedNow = new Set();
     const newSlots = selSchicht.slots.map(sl => {
       const eligible = ma.personen.filter(p => {
@@ -733,8 +820,9 @@ const DienstplanView = ({ ma, onChange, toast }) => {
         return w?.art !== 'wunschfrei';
       });
       const pick = (excl) => {
-        const wunsch = eligible.filter(p=>{ const w=(selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id); return w?.art==='wunschdienst'&&!excl.has(p.id); });
-        const rest   = eligible.filter(p=>!excl.has(p.id)&&!wunsch.find(x=>x.id===p.id));
+        const ok = p => !excl.has(p.id) && !conflictsWith(p.id, usedNow);
+        const wunsch = eligible.filter(p=>{ const w=(selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id); return w?.art==='wunschdienst'&&ok(p); });
+        const rest   = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id));
         const pool   = [...wunsch, ...rest.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0))];
         if (!pool.length) return '';
         const p = pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
