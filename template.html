@@ -16,6 +16,7 @@
   <script>
     firebase.initializeApp("__FIREBASE_CONFIG__");
     const db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   </script>
   <style>
     * { box-sizing: border-box; }
