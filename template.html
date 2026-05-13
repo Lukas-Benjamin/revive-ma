@@ -122,6 +122,20 @@ const perms = u => {
   return {edit:false,del:false,settings:false,profiles:false,...(u.permissions||{})};
 };
 
+// Returns 'edit' | 'view' | 'none' for a user+area combo
+const getAreaAccess = (user, areaId) => {
+  if (!user) return 'view';
+  if (user.role==='owner'||user.role==='admin') return 'edit';
+  const aa = user.areaAccess;
+  if (!aa||!Object.keys(aa).length) {
+    // Backwards compat: old areas array format
+    const old = user.areas||[];
+    if (!old.length) return user.role==='editor'?'edit':'view';
+    return old.includes(areaId)?(user.role==='editor'?'edit':'view'):'none';
+  }
+  return aa[areaId]??'none';
+};
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
 const Modal = ({ title, onClose, children, wide=false }) => {
   useEffect(() => {
@@ -725,7 +739,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIENSTPLAN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const DienstplanView = ({ ma, onChange, toast }) => {
+const DienstplanView = ({ ma, onChange, toast, allowedGroups }) => {
   const [view,         setView]        = useState('list');   // 'list' | 'detail'
   const [modal,        setModal]       = useState(null);     // 'create'|'assign'|'wish'|'share'|'addslot'
   const [selSchichtId, setSelSchichtId]= useState(null);
@@ -814,6 +828,8 @@ const DienstplanView = ({ ma, onChange, toast }) => {
 
     const usedNow = new Set();
     const newSlots = selSchicht.slots.map(sl => {
+      // Skip slots whose group the user has no access to
+      if (allowedGroups && !allowedGroups.includes(sl.gruppeId)) return {...sl};
       const eligible = ma.personen.filter(p => {
         if (p.gruppeId !== sl.gruppeId) return false;
         const w = (selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
@@ -1006,8 +1022,8 @@ const DienstplanView = ({ ma, onChange, toast }) => {
                 {onChange && <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>}
               </div>
               <div className="flex gap-2 flex-wrap">
-                {/* Assign P1 — clickable for admin, read-only for viewer */}
-                {onChange
+                {/* Assign P1 — clickable for admin/allowed group, read-only otherwise */}
+                {(onChange && (!allowedGroups || allowedGroups.includes(sl.gruppeId)))
                   ? <button onClick={() => { setSelSlot({...sl,isSecond:false}); setModal('assign'); }}
                       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                       style={p1?{background:p1.farbe+'25',color:p1.farbe,border:`1px solid ${p1.farbe}44`}:{background:'rgba(0,0,0,0.04)',color:'#64748b',border:'1px solid rgba(0,0,0,0.08)'}}>
@@ -1016,7 +1032,7 @@ const DienstplanView = ({ ma, onChange, toast }) => {
                   : p1 && <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{background:p1.farbe+'25',color:p1.farbe,border:`1px solid ${p1.farbe}44`}}><Avatar name={p1.name} farbe={p1.farbe} size={16}/>{p1.name}</span>
                 }
                 {/* Assign P2 */}
-                {sl.doppelt && (onChange
+                {sl.doppelt && ((onChange && (!allowedGroups || allowedGroups.includes(sl.gruppeId)))
                   ? <button onClick={() => { setSelSlot({...sl,isSecond:true}); setModal('assign'); }}
                       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
                       style={p2?{background:p2.farbe+'25',color:p2.farbe,border:`1px solid ${p2.farbe}44`}:{background:'rgba(0,0,0,0.04)',color:'#64748b',border:'1px solid rgba(0,0,0,0.08)'}}>
@@ -1309,10 +1325,10 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
 // ─── ProfilesView ─────────────────────────────────────────────────────────────
 const INP_P = "w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition-all";
 
-const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
+const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
   const [users, setUsers]      = useState([]);
   const [modal, setModal]      = useState(null);
-  const [form, setForm]        = useState({name:'',pin:'',role:'viewer',permissions:{},areas:[]});
+  const [form, setForm]        = useState({name:'',pin:'',role:'viewer',permissions:{},areaAccess:{},areaGroups:{}});
   const [showFPin,setShowFPin] = useState(false);
   const [myPin, setMyPin]      = useState('');
   const [showMP, setShowMP]    = useState(false);
@@ -1327,12 +1343,8 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
     return ()=>unsub();
   }, []);
 
-  const toggleArea = id => setForm(f => ({
-    ...f, areas: f.areas.includes(id) ? f.areas.filter(a=>a!==id) : [...f.areas, id]
-  }));
-
   const save = async () => {
-    const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{},areas:form.areas||[]};
+    const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{},areaAccess:form.areaAccess||{},areaGroups:form.areaGroups||{}};
     if (!data.name||!data.pin) return;
     if (modal==='add') await db.collection('k21-users').add({...data,createdAt:new Date().toISOString()});
     else await db.collection('k21-users').doc(modal.user.id).update(data);
@@ -1359,7 +1371,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
           <p className="text-slate-500 text-sm mt-0.5">Zugänge &amp; Berechtigungen</p>
         </div>
         {can.profiles && (
-          <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{},areas:[]});setModal('add');}}
+          <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{},areaAccess:{},areaGroups:{}});setModal('add');}}
             className="flex items-center gap-1.5 text-white text-xs font-bold px-3.5 py-2 transition-all"
             style={{background:'#000000',borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Profil
@@ -1411,7 +1423,6 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
       {users.map(u => {
         const inSchedule = ma?.personen?.some(p => p.name.toLowerCase()===u.name.toLowerCase());
         const isAdminRole = u.role==='owner'||u.role==='admin';
-        const areas = u.areas||[];
         return (
         <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{background:'#4f46e5'}}>{initials(u.name)}</div>
@@ -1420,15 +1431,29 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
             <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
               <span className="text-slate-500 text-xs">{ROLE_LABELS[u.role]||'Betrachter'}</span>
               {inSchedule && <span className="text-emerald-500 text-xs">· im Dienstplan</span>}
-              {!isAdminRole && areas.length>0 && areas.map(aid=>{
-                const pr = PROFILES.find(pp=>pp.id===aid);
-                return pr ? <span key={aid} className="pill text-xs" style={{background:pr.color+'22',color:pr.color,border:`1px solid ${pr.color}44`}}>{pr.label}</span> : null;
-              })}
-              {!isAdminRole && areas.length===0 && <span className="text-slate-400 text-xs">· alle Bereiche</span>}
+              {!isAdminRole && (() => {
+                const aa = u.areaAccess||{};
+                const hasAA = Object.keys(aa).length>0;
+                if (!hasAA && !(u.areas||[]).length) return <span className="text-slate-400 text-xs">· alle Bereiche</span>;
+                return PROFILES.map(pr => {
+                  const lvl = getAreaAccess(u, pr.id);
+                  if (lvl==='none') return null;
+                  const grpIds = (u.areaGroups||{})[pr.id]||[];
+                  const grpInfo = grpIds.length>0 ? ` (${grpIds.length} Teams)` : '';
+                  return <span key={pr.id} className="pill text-xs" style={{background:pr.color+'22',color:pr.color,border:`1px solid ${pr.color}44`}}>{pr.label} {lvl==='view'?'👁':'✏️'}{grpInfo}</span>;
+                });
+              })()}
             </div>
           </div>
           {can.profiles && <>
-            <button onClick={()=>{setForm({name:u.name,pin:u.pin||'',role:u.role||'viewer',permissions:u.permissions||{},areas:u.areas||[]});setModal({mode:'edit',user:u});}}
+            <button onClick={()=>{
+              const migratedAA = u.areaAccess || (() => {
+                const old = u.areas||[];
+                const def = u.role==='editor'?'edit':'view';
+                if(!old.length) return Object.fromEntries(PROFILES.map(p=>[p.id,def]));
+                return Object.fromEntries(PROFILES.map(p=>[p.id,old.includes(p.id)?def:'none']));
+              })();
+              setForm({name:u.name,pin:u.pin||'',role:u.role||'viewer',permissions:u.permissions||{},areaAccess:migratedAA,areaGroups:u.areaGroups||{}});setModal({mode:'edit',user:u});}}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all">
               <SI p={IC.edit} size={13}/>
             </button>
@@ -1477,22 +1502,51 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
                 ))}
               </div>
             </div>
-            {/* Area restrictions — for non-admins */}
+            {/* Area access — for non-admins */}
             {(form.role==='editor'||form.role==='viewer') && (
               <div className="pt-1">
-                <label className="text-slate-500 text-xs block mb-1">Sichtbare Bereiche</label>
-                <p className="text-slate-400 text-xs mb-2">Nichts auswählen = alle Bereiche sichtbar</p>
-                <div className="flex gap-1.5">
-                  {PROFILES.map(pr=>{
-                    const on = form.areas.includes(pr.id);
+                <label className="text-slate-500 text-xs block mb-2">Bereichs-Zugang</label>
+                <div className="space-y-2">
+                  {PROFILES.map(pr => {
+                    const acc = (form.areaAccess||{})[pr.id]??'edit';
                     return (
-                      <button key={pr.id} type="button" onClick={()=>toggleArea(pr.id)}
-                        className="flex-1 py-2 rounded-xl text-xs font-bold transition-all border"
-                        style={on
-                          ? {background:pr.color,color:'#ffffff',borderColor:pr.color}
-                          : {background:'transparent',color:'#64748b',borderColor:'rgba(0,0,0,0.1)'}}>
-                        {pr.label}
-                      </button>
+                      <div key={pr.id}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:pr.color}}/>
+                          <span className="text-slate-700 text-xs font-semibold w-20 flex-shrink-0">{pr.label}</span>
+                          <div className="flex gap-1 flex-1">
+                            {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
+                              <button key={lvl} type="button"
+                                onClick={()=>setForm(f=>({...f,areaAccess:{...f.areaAccess,[pr.id]:lvl}}))}
+                                className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                                {lbl}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {pr.id===currentProfile && acc!=='none' && (ma?.gruppen||[]).length>0 && (
+                          <div className="ml-5 mt-1.5 flex flex-wrap gap-1.5 items-center">
+                            <span className="text-slate-400 text-xs flex-shrink-0">Teams:</span>
+                            {(ma.gruppen||[]).map(g => {
+                              const selGrp = ((form.areaGroups||{})[pr.id]||[]);
+                              const on = selGrp.includes(g.id);
+                              return (
+                                <button key={g.id} type="button"
+                                  onClick={()=>{
+                                    const cur = ((form.areaGroups||{})[pr.id]||[]);
+                                    const next = on?cur.filter(x=>x!==g.id):[...cur,g.id];
+                                    setForm(f=>({...f,areaGroups:{...f.areaGroups,[pr.id]:next}}));
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
+                                  style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                                  {g.name}
+                                </button>
+                              );
+                            })}
+                            <span className="text-slate-400 text-xs">({((form.areaGroups||{})[pr.id]||[]).length===0?'Alle':((form.areaGroups||{})[pr.id]||[]).length+' ausgewählt'})</span>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -1556,7 +1610,7 @@ const LoginScreen = ({ onLogin }) => {
     }
     const u = users.find(x=>x.name.toLowerCase()===n.toLowerCase());
     if (u&&u.pin===pin) {
-      onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u),areas:u.areas||[]});
+      onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u),areaAccess:u.areaAccess||{},areaGroups:u.areaGroups||{},areas:u.areas||[]});
     } else {
       setErr('Name oder PIN nicht korrekt');
     }
@@ -1636,7 +1690,7 @@ const App = () => {
 
   const p           = perms(currentUser);
   const isAdmin     = p.settings;
-  const canEdit     = p.edit;
+  const canEdit     = p.edit && getAreaAccess(currentUser, profile) === 'edit';
   const canDel      = p.del;
   const canSettings = p.settings;
   const canProfiles = p.profiles;
@@ -1654,11 +1708,15 @@ const App = () => {
 
   // Which church profiles this user may see
   const visibleProfiles = useMemo(() => {
-    if (!currentUser) return PROFILES;
-    if (currentUser.role==='owner'||currentUser.role==='admin') return PROFILES;
-    const areas = currentUser.areas||[];
-    return areas.length>0 ? PROFILES.filter(pp=>areas.includes(pp.id)) : PROFILES;
+    if (!currentUser||currentUser.role==='owner'||currentUser.role==='admin') return PROFILES;
+    return PROFILES.filter(p=>getAreaAccess(currentUser,p.id)!=='none');
   }, [currentUser]);
+
+  const allowedGroups = useMemo(() => {
+    if (!currentUser||currentUser.role==='owner'||currentUser.role==='admin') return null;
+    const ag = (currentUser.areaGroups||{})[profile]||[];
+    return ag.length>0 ? ag : null; // null = all groups allowed
+  }, [currentUser, profile]);
 
   const switchProfile = pid => {
     setProfile(pid);
@@ -1780,13 +1838,13 @@ const App = () => {
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
-        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='dienstplan'    && <DienstplanView ma={ma} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
         {page==='personen'      && <PersonenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='gruppen'       && <GruppenView    ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={ma}/>}
         {page==='einstellungen' && canSettings  && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
-        {page==='profiles'      && canProfiles  && <ProfilesView currentUser={currentUser} onUpdateUser={updateCurrentUser} ma={ma}/>}
+        {page==='profiles'      && canProfiles  && <ProfilesView currentUser={currentUser} onUpdateUser={updateCurrentUser} ma={ma} currentProfile={profile}/>}
       </main>
     </div>
   );
