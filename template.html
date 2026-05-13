@@ -199,19 +199,18 @@ const INP = "bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm te
 const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 placeholder-slate-600 transition-all";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PERSONEN VIEW  (unified with login profiles)
+// PERSONEN VIEW  (unified with login profiles + permissions)
 // ═══════════════════════════════════════════════════════════════════════════════
-const PersonenView = ({ ma, onChange, toast }) => {
-  const [modal,   setModal]   = useState(null);
-  const [form,    setForm]    = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', pin:'', role:'viewer' });
-  const [showPin, setShowPin] = useState(false);
-  const [loginUsers, setLoginUsers] = useState([]);  // k21-users live
-  // Konflikte state
-  const [konModal, setKonModal] = useState(false);
-  const [konForm,  setKonForm]  = useState({ p1:'', p2:'', note:'' });
+const PersonenView = ({ ma, onChange, toast, profile }) => {
+  const [modal,      setModal]      = useState(null);
+  const [saved,      setSaved]      = useState(false);
+  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppeId:'', pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+  const [showPin,    setShowPin]    = useState(false);
+  const [loginUsers, setLoginUsers] = useState([]);
+  const [konModal,   setKonModal]   = useState(false);
+  const [konForm,    setKonForm]    = useState({ p1:'', p2:'', note:'' });
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
-  // Live sync from shared login collection
   useEffect(() => {
     const unsub = db.collection('k21-users').onSnapshot(
       snap => setLoginUsers(snap.docs.map(d=>({id:d.id,...d.data()}))),
@@ -222,16 +221,24 @@ const PersonenView = ({ ma, onChange, toast }) => {
 
   const findLogin = name => loginUsers.find(u => u.name.toLowerCase()===name.trim().toLowerCase());
 
+  // Migrate old areas[] → areaAccess{}
+  const migrateAA = u => {
+    if (!u) return {};
+    if (u.areaAccess && Object.keys(u.areaAccess).length) return u.areaAccess;
+    const old = u.areas||[], def = u.role==='editor'?'edit':'view';
+    if (!old.length) return Object.fromEntries(PROFILES.map(p=>[p.id,def]));
+    return Object.fromEntries(PROFILES.map(p=>[p.id,old.includes(p.id)?def:'none']));
+  };
+
   const openAdd = () => {
-    setForm({ name:'', farbe:MA_COLORS[ma.personen.length % MA_COLORS.length], gruppeId:'', pin:'', role:'viewer' });
-    setShowPin(false);
-    setModal('add');
+    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppeId:'', pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+    setShowPin(false); setSaved(false); setModal('add');
   };
 
   const openEdit = p => {
     const u = findLogin(p.name);
-    setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'', pin:u?.pin||'', role:u?.role||'viewer' });
-    setShowPin(false);
+    setForm({ name:p.name, farbe:p.farbe, gruppeId:p.gruppeId||'', pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
+    setShowPin(false); setSaved(false);
     setModal({ mode:'edit', id:p.id, oldName:p.name });
   };
 
@@ -246,28 +253,26 @@ const PersonenView = ({ ma, onChange, toast }) => {
       onChange(m => ({ ...m, personen: m.personen.map(p =>
         p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppeId:form.gruppeId } : p
       )}));
-      // If name changed, sync to k21-users
       if (modal.oldName !== name) {
         const oldLogin = findLogin(modal.oldName);
-        if (oldLogin) {
-          await db.collection('k21-users').doc(oldLogin.id).update({ name });
-        }
+        if (oldLogin) await db.collection('k21-users').doc(oldLogin.id).update({ name });
       }
     }
 
     // 2. Sync login profile to k21-users if PIN provided
     if (form.pin.trim()) {
+      const loginData = { pin:form.pin, role:form.role, areaAccess:form.areaAccess||{}, areaGroups:form.areaGroups||{}, permissions:{} };
       const existing = findLogin(name);
       if (existing) {
-        await db.collection('k21-users').doc(existing.id).update({ pin:form.pin, role:form.role });
+        await db.collection('k21-users').doc(existing.id).update({ name, ...loginData });
       } else {
-        await db.collection('k21-users').add({ name, pin:form.pin, role:form.role, permissions:{}, createdAt:new Date().toISOString() });
+        await db.collection('k21-users').add({ name, ...loginData, createdAt:new Date().toISOString() });
       }
-      toast(modal==='add' ? 'Person & Login erstellt ✓' : 'Person & Login gespeichert ✓');
-    } else {
-      toast(modal==='add' ? 'Person hinzugefügt' : 'Person gespeichert');
     }
-    setModal(null);
+
+    // 3. Show success state, then auto-close
+    setSaved(true);
+    setTimeout(() => { setModal(null); setSaved(false); }, 1600);
   };
 
   const del = async p => {
@@ -411,65 +416,121 @@ const PersonenView = ({ ma, onChange, toast }) => {
 
       {modal && (
         <Modal title={modal==='add'?'Person hinzufügen':'Person bearbeiten'} onClose={() => setModal(null)}>
-          <div className="space-y-4">
-            <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
-              <input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Vorname Nachname"
-                className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&save()}/>
-            </div>
-            <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
-              <select value={form.gruppeId} onChange={e=>set('gruppeId',e.target.value)} className={"w-full "+INP}>
-                <option value="">— Keine Gruppe —</option>
-                {ma.gruppen.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-slate-400 text-xs block mb-2">Farbe</label>
-              <ColorPicker value={form.farbe} onChange={c=>set('farbe',c)}/>
-              <div className="mt-3 flex items-center gap-2">
-                <Avatar name={form.name||'?'} farbe={form.farbe} size={38}/>
-                <span className="text-slate-400 text-sm">{form.name||'Vorschau'}</span>
+          {saved ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{background:'rgba(16,185,129,0.1)'}}>
+                <SI p={IC.check} size={24} stroke={2.5} style={{color:'#10b981'}}/>
               </div>
+              <p className="text-slate-700 font-semibold text-sm">Gespeichert!</p>
             </div>
-
-            {/* Login section */}
-            <div className="pt-1 border-t border-black/8">
-              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <SI p={IC.lock} size={10}/> Login-Zugang (optional)
-              </p>
-              <div className="space-y-3">
-                <div className="relative">
-                  <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPin?'none':'disc'}} value={form.pin}
-                    onChange={e=>set('pin',e.target.value)}
-                    placeholder="PIN setzen (leer = kein Login)"
-                    className={"w-full pr-9 "+INP}/>
-                  <button type="button" onClick={()=>setShowPin(p=>!p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-all">
-                    <SI p={IC.eye} size={14}/>
-                  </button>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
+                <input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Vorname Nachname"
+                  className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&save()}/>
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Gruppe</label>
+                <select value={form.gruppeId} onChange={e=>set('gruppeId',e.target.value)} className={"w-full "+INP}>
+                  <option value="">— Keine Gruppe —</option>
+                  {ma.gruppen.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs block mb-2">Farbe</label>
+                <ColorPicker value={form.farbe} onChange={c=>set('farbe',c)}/>
+                <div className="mt-3 flex items-center gap-2">
+                  <Avatar name={form.name||'?'} farbe={form.farbe} size={38}/>
+                  <span className="text-slate-400 text-sm">{form.name||'Vorschau'}</span>
                 </div>
-                {form.pin.trim() && (
-                  <div>
-                    <label className="text-slate-400 text-xs block mb-1.5">Rolle</label>
-                    <div className="flex gap-1.5">
-                      {ROLE_OPTIONS.map(r=>(
-                        <button key={r} type="button" onClick={()=>set('role',r)}
-                          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
-                          {ROLE_LABELS[r]}
-                        </button>
-                      ))}
-                    </div>
+              </div>
+
+              {/* Login section */}
+              <div className="pt-1 border-t border-black/8">
+                <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <SI p={IC.lock} size={10}/> Login-Zugang (optional)
+                </p>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPin?'none':'disc'}} value={form.pin}
+                      onChange={e=>set('pin',e.target.value)}
+                      placeholder="PIN setzen (leer = kein Login)"
+                      className={"w-full pr-9 "+INP}/>
+                    <button type="button" onClick={()=>setShowPin(p=>!p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-all">
+                      <SI p={IC.eye} size={14}/>
+                    </button>
                   </div>
-                )}
+                  {form.pin.trim() && (<>
+                    <div>
+                      <label className="text-slate-400 text-xs block mb-1.5">Rolle</label>
+                      <div className="flex gap-1.5">
+                        {ROLE_OPTIONS.map(r=>(
+                          <button key={r} type="button" onClick={()=>set('role',r)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                            {ROLE_LABELS[r]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {(form.role==='editor'||form.role==='viewer') && (() => {
+                      const pr = PROFILES.find(p=>p.id===profile);
+                      if (!pr) return null;
+                      const acc = (form.areaAccess||{})[pr.id]??'edit';
+                      return (
+                        <div className="space-y-2">
+                          <label className="text-slate-400 text-xs block">Bereich-Zugang</label>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:pr.color}}/>
+                              <span className="text-slate-700 text-xs font-semibold">{pr.label}</span>
+                              <div className="flex gap-1 flex-1">
+                                {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
+                                  <button key={lvl} type="button"
+                                    onClick={()=>set('areaAccess',{...form.areaAccess,[pr.id]:lvl})}
+                                    className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                                    {lbl}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {acc!=='none' && (ma?.gruppen||[]).length>0 && (
+                              <div className="ml-5 mt-1.5 flex flex-wrap gap-1.5 items-center">
+                                <span className="text-slate-400 text-xs flex-shrink-0">Teams:</span>
+                                {(ma.gruppen||[]).map(g => {
+                                  const selGrp = ((form.areaGroups||{})[pr.id]||[]);
+                                  const on = selGrp.includes(g.id);
+                                  return (
+                                    <button key={g.id} type="button"
+                                      onClick={()=>{
+                                        const cur = ((form.areaGroups||{})[pr.id]||[]);
+                                        const next = on?cur.filter(x=>x!==g.id):[...cur,g.id];
+                                        set('areaGroups',{...form.areaGroups,[pr.id]:next});
+                                      }}
+                                      className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
+                                      style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                                      {g.name}
+                                    </button>
+                                  );
+                                })}
+                                <span className="text-slate-400 text-xs">({((form.areaGroups||{})[pr.id]||[]).length===0?'Alle':((form.areaGroups||{})[pr.id]||[]).length+' ausgewählt'})</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>)}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Speichern</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
               </div>
             </div>
-
-            <div className="flex gap-2 pt-1">
-              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
-            </div>
-          </div>
+          )}
         </Modal>
       )}
     </div>
@@ -1774,7 +1835,6 @@ const App = () => {
       { id:'statistik', label:'Statistik', icon:IC.chart  },
     ] : []),
     ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
-    ...(canProfiles ? [{ id:'profiles',      label:'Profile',       icon:IC.users }] : []),
   ];
 
   return (
@@ -1839,12 +1899,11 @@ const App = () => {
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
         {page==='dienstplan'    && <DienstplanView ma={ma} onChange={canEdit?updateMa:null} toast={toast} allowedGroups={allowedGroups}/>}
-        {page==='personen'      && <PersonenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {page==='personen'      && <PersonenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast} profile={profile}/>}
         {page==='gruppen'       && <GruppenView    ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='vorlagen'      && <VorlagenView   ma={ma} onChange={canEdit?updateMa:null} toast={toast}/>}
         {page==='statistik'     && <StatistikView  ma={ma}/>}
         {page==='einstellungen' && canSettings  && <EinstellungenView ma={ma} onChange={updateMa} toast={toast} profile={profile}/>}
-        {page==='profiles'      && canProfiles  && <ProfilesView currentUser={currentUser} onUpdateUser={updateCurrentUser} ma={ma} currentProfile={profile}/>}
       </main>
     </div>
   );
