@@ -1222,13 +1222,13 @@ const EinstellungenView = ({ ma, onChange, toast, profile }) => {
 const INP_P = "w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition-all";
 
 const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
-  const [users, setUsers]   = useState([]);
-  const [modal, setModal]   = useState(null);
-  const [form, setForm]     = useState({name:'',pin:'',role:'viewer',permissions:{}});
+  const [users, setUsers]      = useState([]);
+  const [modal, setModal]      = useState(null);
+  const [form, setForm]        = useState({name:'',pin:'',role:'viewer',permissions:{},areas:[]});
   const [showFPin,setShowFPin] = useState(false);
-  const [myPin, setMyPin]   = useState('');
-  const [showMP, setShowMP] = useState(false);
-  const [pinOK, setPinOK]   = useState(false);
+  const [myPin, setMyPin]      = useState('');
+  const [showMP, setShowMP]    = useState(false);
+  const [pinOK, setPinOK]      = useState(false);
   const can = perms(currentUser);
 
   useEffect(() => {
@@ -1239,8 +1239,12 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
     return ()=>unsub();
   }, []);
 
+  const toggleArea = id => setForm(f => ({
+    ...f, areas: f.areas.includes(id) ? f.areas.filter(a=>a!==id) : [...f.areas, id]
+  }));
+
   const save = async () => {
-    const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{}};
+    const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{},areas:form.areas||[]};
     if (!data.name||!data.pin) return;
     if (modal==='add') await db.collection('k21-users').add({...data,createdAt:new Date().toISOString()});
     else await db.collection('k21-users').doc(modal.user.id).update(data);
@@ -1267,7 +1271,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
           <p className="text-slate-500 text-sm mt-0.5">Zugänge &amp; Berechtigungen</p>
         </div>
         {can.profiles && (
-          <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{}});setModal('add');}}
+          <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{},areas:[]});setModal('add');}}
             className="flex items-center gap-1.5 text-white text-xs font-bold px-3.5 py-2 transition-all"
             style={{background:'#000000',borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Profil
@@ -1318,18 +1322,25 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
       {/* Firebase users */}
       {users.map(u => {
         const inSchedule = ma?.personen?.some(p => p.name.toLowerCase()===u.name.toLowerCase());
+        const isAdminRole = u.role==='owner'||u.role==='admin';
+        const areas = u.areas||[];
         return (
         <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-3">
           <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{background:'#4f46e5'}}>{initials(u.name)}</div>
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-slate-900 text-sm truncate">{u.name}</div>
-            <div className="text-slate-500 text-xs flex items-center gap-1.5">
-              {ROLE_LABELS[u.role]||'Betrachter'}
-              {inSchedule && <span className="text-emerald-500">· im Dienstplan</span>}
+            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+              <span className="text-slate-500 text-xs">{ROLE_LABELS[u.role]||'Betrachter'}</span>
+              {inSchedule && <span className="text-emerald-500 text-xs">· im Dienstplan</span>}
+              {!isAdminRole && areas.length>0 && areas.map(aid=>{
+                const pr = PROFILES.find(pp=>pp.id===aid);
+                return pr ? <span key={aid} className="pill text-xs" style={{background:pr.color+'22',color:pr.color,border:`1px solid ${pr.color}44`}}>{pr.label}</span> : null;
+              })}
+              {!isAdminRole && areas.length===0 && <span className="text-slate-400 text-xs">· alle Bereiche</span>}
             </div>
           </div>
           {can.profiles && <>
-            <button onClick={()=>{setForm({name:u.name,pin:u.pin||'',role:u.role||'viewer',permissions:u.permissions||{}});setModal({mode:'edit',user:u});}}
+            <button onClick={()=>{setForm({name:u.name,pin:u.pin||'',role:u.role||'viewer',permissions:u.permissions||{},areas:u.areas||[]});setModal({mode:'edit',user:u});}}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all">
               <SI p={IC.edit} size={13}/>
             </button>
@@ -1378,6 +1389,28 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma }) => {
                 ))}
               </div>
             </div>
+            {/* Area restrictions — for non-admins */}
+            {(form.role==='editor'||form.role==='viewer') && (
+              <div className="pt-1">
+                <label className="text-slate-500 text-xs block mb-1">Sichtbare Bereiche</label>
+                <p className="text-slate-400 text-xs mb-2">Nichts auswählen = alle Bereiche sichtbar</p>
+                <div className="flex gap-1.5">
+                  {PROFILES.map(pr=>{
+                    const on = form.areas.includes(pr.id);
+                    return (
+                      <button key={pr.id} type="button" onClick={()=>toggleArea(pr.id)}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold transition-all border"
+                        style={on
+                          ? {background:pr.color,color:'#ffffff',borderColor:pr.color}
+                          : {background:'transparent',color:'#64748b',borderColor:'rgba(0,0,0,0.1)'}}>
+                        {pr.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {form.role==='viewer' && (
               <div className="pt-1 space-y-2">
                 <label className="text-slate-500 text-xs block">Zusätzliche Rechte</label>
@@ -1435,7 +1468,7 @@ const LoginScreen = ({ onLogin }) => {
     }
     const u = users.find(x=>x.name.toLowerCase()===n.toLowerCase());
     if (u&&u.pin===pin) {
-      onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u)});
+      onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u),areas:u.areas||[]});
     } else {
       setErr('Name oder PIN nicht korrekt');
     }
@@ -1543,11 +1576,26 @@ const App = () => {
   const logout = () => { setCurrentUser(undefined); localStorage.removeItem('k21-user'); setPage('dienstplan'); };
   const updateCurrentUser = user => { setCurrentUser(user); localStorage.setItem('k21-user', JSON.stringify(user)); };
 
+  // Which church profiles this user may see
+  const visibleProfiles = useMemo(() => {
+    if (!currentUser) return PROFILES;
+    if (currentUser.role==='owner'||currentUser.role==='admin') return PROFILES;
+    const areas = currentUser.areas||[];
+    return areas.length>0 ? PROFILES.filter(pp=>areas.includes(pp.id)) : PROFILES;
+  }, [currentUser]);
+
   const switchProfile = pid => {
     setProfile(pid);
     localStorage.setItem('ma-profile', pid);
     setPage('dienstplan');
   };
+
+  // Auto-redirect if current profile is outside allowed areas
+  useEffect(() => {
+    if (visibleProfiles.length>0 && !visibleProfiles.find(pp=>pp.id===profile)) {
+      switchProfile(visibleProfiles[0].id);
+    }
+  }, [visibleProfiles]);
 
   // Firebase Sync
   const writeMa = data => {
@@ -1585,12 +1633,14 @@ const App = () => {
 
   const TABS = [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
-    { id:'personen',   label:'Personen',   icon:IC.person   },
-    { id:'gruppen',    label:'Gruppen',    icon:IC.users    },
-    { id:'vorlagen',   label:'Vorlagen',   icon:IC.layers   },
-    { id:'statistik',  label:'Statistik',  icon:IC.chart    },
-    ...(canSettings  ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
-    ...(canProfiles  ? [{ id:'profiles',      label:'Profile',       icon:IC.users }] : []),
+    ...(canEdit ? [
+      { id:'personen',  label:'Personen',  icon:IC.person },
+      { id:'gruppen',   label:'Gruppen',   icon:IC.users  },
+      { id:'vorlagen',  label:'Vorlagen',  icon:IC.layers },
+      { id:'statistik', label:'Statistik', icon:IC.chart  },
+    ] : []),
+    ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
+    ...(canProfiles ? [{ id:'profiles',      label:'Profile',       icon:IC.users }] : []),
   ];
 
   return (
@@ -1611,7 +1661,7 @@ const App = () => {
 
           {/* Profile switcher — centered */}
           <div className="flex gap-1.5 mx-auto items-center">
-            {PROFILES.map(p => (
+            {visibleProfiles.map(p => (
               <button key={p.id} onClick={() => switchProfile(p.id)}
                 className="px-3.5 py-1.5 text-xs font-bold transition-all"
                 style={{
