@@ -242,6 +242,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [konForm,    setKonForm]    = useState({ p1:'', p2:'', note:'' });
   const [prefModal,  setPrefModal]  = useState(false);
   const [prefForm,   setPrefForm]   = useState({ personId:'', dienstId:'', prio:'bevorzugt' });
+  const [search,     setSearch]     = useState('');
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   useEffect(() => {
@@ -342,8 +343,13 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
         )}
       </div>
 
+      <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Personen suchen…"
+        className="w-full bg-black/5 border border-black/10 rounded-2xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-black/10"/>
+
       {(() => {
-        const visPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
+        const q = search.trim().toLowerCase();
+        const visPersonen = (allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen)
+          .filter(p => !q || p.name.toLowerCase().includes(q));
         return visPersonen.length === 0 ? (
           <div className="glass rounded-2xl py-16 text-center">
             <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
@@ -355,24 +361,42 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
             const gruppen = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
             const hasLogin = !!findLogin(p.name);
             return (
-              <div key={p.id} className="glass glass-hover rounded-2xl p-4 flex items-center gap-3">
-                <Avatar name={p.name} farbe={p.farbe}/>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-800 text-sm">{p.name}</span>
-                    {hasLogin && (
-                      <span title="Kann sich einloggen" className="text-emerald-500 opacity-70">
-                        <SI p={IC.lock} size={10} stroke={2.5}/>
-                      </span>
-                    )}
+              {(() => {
+                const praefs = (ma.praeferenzen||[]).filter(pf=>pf.personId===p.id);
+                const allDiensteMap = {};
+                ma.gruppen.forEach(g=>(g.dienste||[]).forEach(d=>{allDiensteMap[d.id]=d;}));
+                return (
+                <div key={p.id} className="glass glass-hover rounded-2xl p-4">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={p.name} farbe={p.farbe}/>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-800 text-sm">{p.name}</span>
+                        {hasLogin && (
+                          <span title="Kann sich einloggen" className="text-emerald-500 opacity-70">
+                            <SI p={IC.lock} size={10} stroke={2.5}/>
+                          </span>
+                        )}
+                      </div>
+                      {gruppen.length>0 && <div className="flex gap-1.5 flex-wrap mt-0.5">{gruppen.map(g=><span key={g.id} className="text-xs font-medium" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+                    </div>
+                    {onChange && <>
+                      <button onClick={() => openEdit(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all"><SI p={IC.edit} size={12}/></button>
+                      <button onClick={() => del(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-50 text-slate-500 hover:text-red-500 transition-all"><SI p={IC.trash} size={12}/></button>
+                    </>}
                   </div>
-                  {gruppen.length>0 && <div className="flex gap-1.5 flex-wrap mt-0.5">{gruppen.map(g=><span key={g.id} className="text-xs font-medium" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+                  {praefs.length>0 && (
+                    <div className="flex flex-wrap gap-1 mt-2.5 pt-2.5" style={{borderTop:'1px solid rgba(0,0,0,0.06)'}}>
+                      {praefs.map(pf=>{
+                        const d=allDiensteMap[pf.dienstId]; if(!d) return null;
+                        const isBev=pf.prio==='bevorzugt';
+                        return <span key={pf.id} className="pill text-xs" style={{background:isBev?'rgba(16,185,129,0.1)':'rgba(239,68,68,0.08)',color:isBev?'#059669':'#dc2626'}}>{isBev?'👍':'👎'} {d.name}</span>;
+                      })}
+                    </div>
+                  )}
                 </div>
-                {onChange && <>
-                  <button onClick={() => openEdit(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all"><SI p={IC.edit} size={12}/></button>
-                  <button onClick={() => del(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-50 text-slate-500 hover:text-red-500 transition-all"><SI p={IC.trash} size={12}/></button>
-                </>}
-              </div>
+                );
+              })()}
             );
           })}
           </div>
@@ -410,15 +434,15 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
             <div className="glass rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-slate-800 text-sm font-semibold">Konflikte</p>
+                  <p className="text-slate-800 text-sm font-semibold">Ausnahmen</p>
                   <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden</p>
                 </div>
                 <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={visPersonen.length<2}
                   className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
-                  <SI p={IC.plus} size={12}/> Konflikt
+                  <SI p={IC.plus} size={12}/> Ausnahme
                 </button>
               </div>
-              {visKonflikte.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Konflikte definiert</p>}
+              {visKonflikte.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Ausnahmen definiert</p>}
               {visKonflikte.map(k => {
                 const pa = ma.personen.find(p=>p.id===k.p1);
                 const pb = ma.personen.find(p=>p.id===k.p2);
@@ -475,7 +499,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
       {/* Konflikt-Modal */}
       {konModal && (
-        <Modal title="Konflikt hinzufügen" onClose={()=>setKonModal(false)}>
+        <Modal title="Ausnahme hinzufügen" onClose={()=>setKonModal(false)}>
           <div className="space-y-4">
             <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
             {(() => {
@@ -506,7 +530,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
               <button onClick={()=>{
                 if(!konForm.p1||!konForm.p2) return;
                 onChange(m=>({...m,konflikte:[...(m.konflikte||[]),{id:genId(),p1:konForm.p1,p2:konForm.p2,note:konForm.note.trim()}]}));
-                toast('Konflikt gespeichert');
+                toast('Ausnahme gespeichert');
                 setKonModal(false);
               }} disabled={!konForm.p1||!konForm.p2}
                 className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
@@ -1760,6 +1784,7 @@ const StatistikView = ({ ma }) => {
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo,   setFilterTo]   = useState('');
   const [filterGrp,  setFilterGrp]  = useState('all');
+  const [sortMode,   setSortMode]   = useState('desc');
 
   const filtSchichten = useMemo(() => ma.schichten.filter(s =>
     (!filterFrom || s.datum >= filterFrom) && (!filterTo || s.datum <= filterTo)
@@ -1779,8 +1804,8 @@ const StatistikView = ({ ma }) => {
           byDienst[d?.name||'?'] = (byDienst[d?.name||'?']||0)+1;
         }));
         return { p, total, byDienst };
-      }).sort((a,b) => b.total-a.total);
-  }, [ma, filtSchichten, filterGrp]);
+      }).sort((a,b) => sortMode==='alpha' ? a.p.name.localeCompare(b.p.name) : sortMode==='asc' ? a.total-b.total : b.total-a.total);
+  }, [ma, filtSchichten, filterGrp, sortMode]);
 
   const teamStats = useMemo(() => {
     return ma.gruppen
@@ -1826,6 +1851,12 @@ const StatistikView = ({ ma }) => {
             <option value="all">Alle Teams</option>
             {ma.gruppen.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
+          <div className="flex gap-1 ml-auto">
+            {[['desc','Meiste'],['asc','Wenigste'],['alpha','A–Z']].map(([m,l])=>(
+              <button key={m} onClick={()=>setSortMode(m)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${sortMode===m?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>{l}</button>
+            ))}
+          </div>
           {(filterFrom||filterTo||filterGrp!=='all') && (
             <button onClick={()=>{setFilterFrom('');setFilterTo('');setFilterGrp('all');}} className="text-slate-400 text-xs hover:text-slate-600 transition-all">✕ Zurücksetzen</button>
           )}
