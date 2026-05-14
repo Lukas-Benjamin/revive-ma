@@ -235,7 +235,7 @@ const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-
 const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [modal,      setModal]      = useState(null);
   const [saved,      setSaved]      = useState(false); // unused, kept for compat
-  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+  const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{}, notiz:'' });
   const [showPin,    setShowPin]    = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);
   const [konModal,   setKonModal]   = useState(false);
@@ -265,13 +265,13 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   };
 
   const openAdd = () => {
-    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
+    setForm({ name:'', farbe:MA_COLORS[ma.personen.length%MA_COLORS.length], gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{}, notiz:'' });
     setShowPin(false); setSaved(false); setModal('add');
   };
 
   const openEdit = p => {
     const u = findLogin(p.name);
-    setForm({ name:p.name, farbe:p.farbe, gruppenIds:p.gruppenIds||(p.gruppeId?[p.gruppeId]:[]), dienste:p.dienste||[], pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{} });
+    setForm({ name:p.name, farbe:p.farbe, gruppenIds:p.gruppenIds||(p.gruppeId?[p.gruppeId]:[]), dienste:p.dienste||[], pin:u?.pin||'', role:u?.role||'viewer', areaAccess:migrateAA(u), areaGroups:u?.areaGroups||{}, notiz:p.notiz||'' });
     setShowPin(false); setSaved(false);
     setModal({ mode:'edit', id:p.id, oldName:p.name });
   };
@@ -282,10 +282,10 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
     // 1. Save / update person in ma data
     if (modal === 'add') {
-      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[] }] }));
+      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[], notiz:form.notiz.trim() }] }));
     } else {
       onChange(m => ({ ...m, personen: m.personen.map(p =>
-        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[] } : p
+        p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[], notiz:form.notiz.trim() } : p
       )}));
       if (modal.oldName !== name) {
         const oldLogin = findLogin(modal.oldName);
@@ -379,6 +379,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                         )}
                       </div>
                       {gruppen.length>0 && <div className="flex gap-1.5 flex-wrap mt-0.5">{gruppen.map(g=><span key={g.id} className="text-xs font-medium" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+                      {p.notiz && <div className="text-slate-400 text-xs mt-0.5 truncate" title={p.notiz}>{p.notiz}</div>}
                     </div>
                     {onChange && <>
                       <button onClick={() => openEdit(p)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all"><SI p={IC.edit} size={12}/></button>
@@ -745,6 +746,13 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                 </div>
               </div>
 
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Notiz (intern)</label>
+                <textarea value={form.notiz} onChange={e=>set('notiz',e.target.value)}
+                  placeholder="z. B. nur Sonntags, Telefon: …"
+                  rows={2} className={"w-full resize-none "+INP}/>
+              </div>
+
               <div className="flex gap-2 pt-1">
                 <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Speichern</button>
                 <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
@@ -1104,6 +1112,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [planModal,    setPlanModal]   = useState(null);
   const [planForm,     setPlanForm]    = useState({ name:'' });
   const [filterPerson, setFilterPerson]= useState('');
+  const [listView,     setListView]    = useState('list'); // 'list'|'calendar'
+  const [calYM,        setCalYM]       = useState(() => { const n=new Date(); return {y:n.getFullYear(),m:n.getMonth()}; });
+  const [dupModal,     setDupModal]    = useState(null); // schicht to duplicate
+  const [dupDate,      setDupDate]     = useState('');
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => {
@@ -1175,6 +1187,24 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
     toast('Schicht erstellt');
+  };
+
+  const dupSchicht = () => {
+    if (!dupModal||!dupDate) return;
+    const s = dupModal;
+    const copy = { ...s, id:genId(), datum:dupDate, wuensche:[], abfrageToken:'', veroeffentlicht:false,
+      slots:s.slots.map(sl=>({...sl,id:genId(),personId:'',personId2:''})) };
+    onChange(m=>({...m,schichten:[...m.schichten,copy]}));
+    setDupModal(null); setDupDate(''); toast('Schicht dupliziert ✓');
+  };
+
+  const saveAsVorlage = () => {
+    if (!selSchicht||!onChange) return;
+    const name = selSchicht.titel || fmtDe(selSchicht.datum);
+    const v = { id:genId(), name, art:'einzel',
+      slots:selSchicht.slots.map(sl=>({id:genId(),gruppeId:sl.gruppeId,dienstId:sl.dienstId,doppelt:sl.doppelt||false})) };
+    onChange(m=>({...m,vorlagen:[...m.vorlagen,v]}));
+    toast('Vorlage "'+name+'" erstellt ✓');
   };
 
   const deleteSchicht = id => {
@@ -1315,6 +1345,63 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     return lines.join('\n');
   };
 
+  // ── Calendar View ──
+  if (view==='list' && listView==='calendar') {
+    const DAYS = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+    const firstDay = new Date(calYM.y, calYM.m, 1);
+    const lastDay  = new Date(calYM.y, calYM.m+1, 0);
+    const startDow = (firstDay.getDay()+6)%7; // 0=Mon
+    const cells = [];
+    for (let i=0;i<startDow;i++) cells.push(null);
+    for (let d=1;d<=lastDay.getDate();d++) cells.push(d);
+    while (cells.length%7!==0) cells.push(null);
+    const pad = n => String(n).padStart(2,'0');
+    const monthNames=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    return (
+      <div className="space-y-4 up">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold grad">Dienstplan</h1>
+            <p className="text-slate-500 text-sm mt-0.5">{monthNames[calYM.m]} {calYM.y}</p>
+          </div>
+          <div className="flex gap-2 items-center">
+            <button onClick={()=>setListView('list')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-600 hover:bg-black/8 transition-all">Liste</button>
+            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m-1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/8 transition-all"><SI p={IC.chevLeft} size={13}/></button>
+            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m+1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/8 transition-all"><SI p={IC.chevronRight} size={13}/></button>
+          </div>
+        </div>
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-7" style={{borderBottom:'1px solid rgba(0,0,0,0.08)'}}>
+            {DAYS.map(d=><div key={d} className="py-2 text-center text-xs font-semibold text-slate-400">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7">
+            {cells.map((day,i)=>{
+              if (!day) return <div key={i} className="min-h-[56px] p-1" style={{borderRight:'1px solid rgba(0,0,0,0.05)',borderBottom:'1px solid rgba(0,0,0,0.05)'}}/>;
+              const dateStr = `${calYM.y}-${pad(calYM.m+1)}-${pad(day)}`;
+              const daySchichten = sorted.filter(s=>s.datum===dateStr);
+              const isToday = dateStr===today();
+              return (
+                <div key={i} className="min-h-[56px] p-1 space-y-0.5" style={{borderRight:'1px solid rgba(0,0,0,0.05)',borderBottom:'1px solid rgba(0,0,0,0.05)'}}>
+                  <div className={`text-xs font-semibold mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday?'bg-slate-900 text-white':'text-slate-500'}`}>{day}</div>
+                  {daySchichten.map(s=>{
+                    const filled=s.slots.filter(sl=>sl.personId).length;
+                    const full=filled===s.slots.length&&s.slots.length>0;
+                    return (
+                      <div key={s.id} onClick={()=>{setSelSchichtId(s.id);setView('detail');}} className="cursor-pointer rounded px-1 py-0.5 text-xs truncate font-medium transition-all hover:opacity-80"
+                        style={{background:full?'rgba(16,185,129,0.15)':'rgba(99,102,241,0.12)',color:full?'#10b981':'#818cf8'}}>
+                        {s.titel||'Schicht'} {filled}/{s.slots.length}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── List View ──
   if (view==='list') return (
     <div className="space-y-5 up">
@@ -1328,6 +1415,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.zap} size={13}/> Auto-Plan
           </button>}
+          <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            📅 Kalender
+          </button>
           {ma.schichten.length>0 && <button onClick={()=>{ setShareScope('all'); setShareText(buildPlanText(ma)); setModal('share'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.send} size={13}/> Teilen
@@ -1433,15 +1523,38 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                       {s.slots.length>8 && <span className="text-slate-600 text-xs ml-1">+{s.slots.length-8}</span>}
                     </div>
                   </div>
-                  {onChange && !allowedGroups && <button onClick={e=>{e.stopPropagation();if(confirm('Schicht löschen?'))deleteSchicht(s.id);}}
-                    className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-all">
-                    <SI p={IC.trash} size={12}/>
-                  </button>}
+                  {onChange && !allowedGroups && <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={e=>{e.stopPropagation();setDupDate(s.datum);setDupModal(s);}}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-indigo-50 text-slate-500 hover:text-indigo-500 transition-all" title="Duplizieren">
+                      <SI p={IC.copy} size={12}/>
+                    </button>
+                    <button onClick={e=>{e.stopPropagation();if(confirm('Schicht löschen?'))deleteSchicht(s.id);}}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-all">
+                      <SI p={IC.trash} size={12}/>
+                    </button>
+                  </div>}
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {dupModal && (
+        <Modal title="Schicht duplizieren" onClose={()=>setDupModal(null)}>
+          <div className="space-y-4">
+            <p className="text-slate-500 text-xs">Slots werden übernommen, Einteilungen werden zurückgesetzt.</p>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Neues Datum *</label>
+              <input type="date" value={dupDate} onChange={e=>setDupDate(e.target.value)} className={"w-full "+INP} autoFocus/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={dupSchicht} disabled={!dupDate}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Duplizieren</button>
+              <button onClick={()=>setDupModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {planModal==='create' && (
@@ -1541,12 +1654,21 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             📋 Abfrage
           </button>
         )}
-        {onChange && !allowedGroups && (
+        {onChange && !allowedGroups && <>
+          <button onClick={saveAsVorlage}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>
+            <SI p={IC.copy} size={12}/> Als Vorlage
+          </button>
+          <button onClick={()=>{setDupDate(selSchicht.datum);setDupModal(selSchicht);}}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/8 transition-all">
+            <SI p={IC.copy} size={12}/> Duplizieren
+          </button>
           <button onClick={addSchSlot} disabled={ma.gruppen.length===0}
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/8 text-slate-800 hover:bg-black/12 disabled:opacity-40 transition-all">
             <SI p={IC.plus} size={12}/> Slot
           </button>
-        )}
+        </>}
       </div>
 
       {/* Slots */}
@@ -1879,6 +2001,7 @@ const StatistikView = ({ ma }) => {
   }, [ma]);
 
   const maxVal = stats.length ? Math.max(...stats.map(s=>s.total), 1) : 1;
+  const avgVal = stats.length ? stats.reduce((s,x)=>s+x.total,0)/stats.length : 0;
 
   return (
     <div className="space-y-5 up">
@@ -1939,7 +2062,11 @@ const StatistikView = ({ ma }) => {
                       {gruppen2.length>0&&<div className="flex gap-1.5 flex-wrap">{gruppen2.map(g=><span key={g.id} className="text-xs" style={{color:g.farbe}}>{g.name}</span>)}</div>}
                       {lastDate&&<div className="text-slate-400 text-xs mt-0.5">Letzter Einsatz: {fmtDe(lastDate)}</div>}
                     </div>
-                    <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
+                      {avgVal>0 && total>avgVal*1.5 && <span className="pill text-xs" style={{background:'rgba(249,115,22,0.12)',color:'#f97316'}}>Viel</span>}
+                      {avgVal>0 && total<avgVal*0.5 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.12)',color:'#f59e0b'}}>Wenig</span>}
+                    </div>
                   </div>
                   <div className="h-1.5 rounded-full bg-black/5 overflow-hidden mb-2">
                     <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:p.farbe}}/>
