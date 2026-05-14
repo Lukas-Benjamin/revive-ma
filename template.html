@@ -153,7 +153,7 @@ const ToastContainer = ({ toasts }) => (
 // ─── User & Permission System ─────────────────────────────────────────────────
 const OWNER_NAME  = 'Lukas Reuter';
 const OWNER_PIN   = '0207';
-const ROLE_LABELS = { owner:'Eigentümer', admin:'Admin', editor:'Bearbeiter', viewer:'Betrachter' };
+const ROLE_LABELS = { owner:'Admin', admin:'Co-Admin', editor:'Bearbeiter', viewer:'Betrachter' };
 const ROLE_OPTIONS = ['admin','editor','viewer'];
 
 const perms = u => {
@@ -1838,7 +1838,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
             {pinOK?'✓':'Speichern'}
           </button>
         </div>
-        {currentUser?.role==='owner' && <p className="text-xs text-slate-400 mt-2">Eigentümer-PIN ist fest eingestellt.</p>}
+        {currentUser?.role==='owner' && <p className="text-xs text-slate-400 mt-2">Admin-PIN ist fest eingestellt.</p>}
       </div>
 
       {/* Info hint */}
@@ -1855,9 +1855,9 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
         <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{background:'#000000'}}>LR</div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-slate-900 text-sm">Lukas Reuter</div>
-          <div className="text-slate-500 text-xs">Eigentümer · Alle Rechte</div>
+          <div className="text-slate-500 text-xs">Admin · Alle Rechte</div>
         </div>
-        <span className="pill text-xs font-semibold" style={{background:'rgba(0,0,0,0.08)',color:'#0f172a'}}>Eigentümer</span>
+        <span className="pill text-xs font-semibold" style={{background:'rgba(0,0,0,0.08)',color:'#0f172a'}}>Admin</span>
       </div>
 
       {/* Firebase users */}
