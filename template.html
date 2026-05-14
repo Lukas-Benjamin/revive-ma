@@ -126,7 +126,7 @@ const buildPlanText = (ma, single) => {
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], tauschAnfragen:[] });
+const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[] });
 const DEFAULT_SHARED = () => ({ personen:[], konflikte:[], praeferenzen:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
@@ -1074,13 +1074,31 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [shareText,    setShareText]   = useState('');
   const [shareScope,   setShareScope]  = useState('single'); // 'single'|'all'
   const [createForm,   setCreateForm]  = useState({ datum:today(), titel:'', vorlageId:'' });
-  const [tauschSlot,   setTauschSlot]  = useState(null);    // {slotId, isSecond}
+  const [tauschSlot,   setTauschSlot]  = useState(null);
   const [tauschNote,   setTauschNote]  = useState('');
+  const [selPlanId,    setSelPlanId]   = useState('all');
+  const [planModal,    setPlanModal]   = useState(null);
+  const [planForm,     setPlanForm]    = useState({ name:'' });
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
-  const sorted     = useMemo(() => [...ma.schichten].sort((a,b)=>b.datum.localeCompare(a.datum)), [ma.schichten]);
+  const sorted     = useMemo(() => {
+    const list = selPlanId==='all' ? ma.schichten : ma.schichten.filter(s=>s.planId===selPlanId);
+    return [...list].sort((a,b)=>b.datum.localeCompare(a.datum));
+  }, [ma.schichten, selPlanId]);
   const myPerson   = useMemo(() => currentUser ? ma.personen.find(p=>p.name===currentUser.name)||null : null, [ma.personen, currentUser]);
   const myGroupIds = useMemo(() => myPerson ? (myPerson.gruppenIds||(myPerson.gruppeId?[myPerson.gruppeId]:[])) : [], [myPerson]);
+
+  const createPlan = () => {
+    if (!planForm.name.trim()) return;
+    const neu = {id:genId(), name:planForm.name.trim(), erstelltAm:today()};
+    onChange(m=>({...m, plaene:[...(m.plaene||[]),neu]}));
+    setSelPlanId(neu.id); setPlanModal(null); toast('Plan erstellt');
+  };
+  const deletePlan = id => {
+    if (!confirm('Plan löschen? Die Schichten bleiben erhalten (werden zu "Alle" verschoben).')) return;
+    onChange(m=>({...m, plaene:(m.plaene||[]).filter(p=>p.id!==id), schichten:m.schichten.map(s=>s.planId===id?{...s,planId:''}:s)}));
+    if (selPlanId===id) setSelPlanId('all');
+  };
 
   // ── Tausch helpers ──
   const submitTausch = () => {
@@ -1119,7 +1137,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const datum = d.toISOString().slice(0,10);
         const titel = [createForm.titel.trim(), tag.label].filter(Boolean).join(' – ');
         const slots = (tag.slots||[]).map(s=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:s.doppelt||false,personId:'',personId2:''}));
-        return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false};
+        return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false,planId:selPlanId==='all'?'':selPlanId};
       });
       onChange(m=>({...m,schichten:[...m.schichten,...newSchichten]}));
       if(newSchichten[0]){setSelSchichtId(newSchichten[0].id);setView('detail');}
@@ -1127,7 +1145,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       return;
     }
     const slots = vorlage ? (vorlage.slots||[]).map(s=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:s.doppelt||false, personId:'', personId2:'' })) : [];
-    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false };
+    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId };
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
     toast('Schicht erstellt');
@@ -1210,9 +1228,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         if (!pool.length) return '';
         const p = pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
       };
-      const p1 = pick(new Set(usedNow)); if(p1) usedNow.add(p1);
-      const p2 = sl.doppelt ? pick(new Set(usedNow)) : ''; if(p2) usedNow.add(p2);
-      return { ...sl, personId:p1, personId2:p2 };
+      const p1 = pick(new Set(usedNow)); if(p1&&!sl.doppelt) usedNow.add(p1);
+      return { ...sl, personId:p1, personId2:'' };
     });
     updateSchicht(selSchicht.id, s=>({ ...s, slots:newSlots }));
     toast('Auto-Einteilung abgeschlossen ⚡');
@@ -1243,9 +1260,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           if(!pool.length) return '';
           const p=pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
         };
-        const p1=pick(new Set(usedNow)); if(p1) usedNow.add(p1);
-        const p2=sl.doppelt?pick(new Set(usedNow)):''; if(p2) usedNow.add(p2);
-        return {...sl,personId:p1,personId2:p2};
+        const p1=pick(new Set(usedNow)); if(p1&&!sl.doppelt) usedNow.add(p1);
+        return {...sl,personId:p1,personId2:''};
       });
       return {...s,slots:newSlots};
     });
@@ -1259,9 +1275,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
       const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
       const p1 = ma.personen.find(x=>x.id===sl.personId);
-      const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
-      const names = [p1?.name,p2?.name].filter(Boolean).join(' & ') || '—';
-      lines.push(`• ${d?.name||'?'}: ${names}`);
+      const names = p1?.name || '—';
+      lines.push(`• ${d?.name||'?'}: ${names}${sl.doppelt?' (Doppeldienst)':''}`);
     });
     return lines.join('\n');
   };
@@ -1290,6 +1305,30 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         </div>
       </div>
 
+      {/* Plan switcher */}
+      {(onChange || (ma.plaene||[]).length>0) && (
+        <div className="flex gap-1.5 flex-wrap items-center">
+          <button onClick={()=>setSelPlanId('all')} style={{borderRadius:30,background:selPlanId==='all'?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId==='all'?'#ffffff':'#64748b'}}
+            className="px-3 py-1.5 text-xs font-semibold transition-all">Alle</button>
+          {(ma.plaene||[]).map(p=>(
+            <div key={p.id} className="flex items-center gap-0.5">
+              <button onClick={()=>setSelPlanId(p.id)} style={{borderRadius:30,background:selPlanId===p.id?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId===p.id?'#ffffff':'#64748b'}}
+                className="px-3 py-1.5 text-xs font-semibold transition-all">{p.name}</button>
+              {onChange && !allowedGroups && selPlanId===p.id && (
+                <button onClick={()=>deletePlan(p.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-red-400 transition-all"><SI p={IC.x} size={10}/></button>
+              )}
+            </div>
+          ))}
+          {onChange && !allowedGroups && (
+            <button onClick={()=>{setPlanForm({name:''});setPlanModal('create');}}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-all"
+              style={{borderRadius:30,background:'rgba(0,0,0,0.04)',border:'1px dashed rgba(0,0,0,0.15)'}}>
+              <SI p={IC.plus} size={10}/> Plan
+            </button>
+          )}
+        </div>
+      )}
+
       {sorted.length===0 ? (
         <div className="glass rounded-2xl py-16 text-center">
           <div className="text-slate-400 font-medium mb-1">Noch keine Schichten</div>
@@ -1313,6 +1352,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                         ? <span className="pill" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>✓ Veröffentlicht</span>
                         : <span className="pill" style={{background:'rgba(100,116,139,0.15)',color:'#64748b'}}>Entwurf</span>}
                       {openRequests>0 && <span className="pill" style={{background:'rgba(251,146,60,0.18)',color:'#f97316'}}>🔄 {openRequests} Tausch</span>}
+                      {s.planId && (ma.plaene||[]).find(p=>p.id===s.planId) && <span className="pill text-xs" style={{background:'rgba(99,102,241,0.12)',color:'#818cf8'}}>{(ma.plaene||[]).find(p=>p.id===s.planId)?.name}</span>}
                     </div>
                     <div className="text-slate-600 text-xs mb-2">{filled}/{s.slots.length} Slots besetzt</div>
                     <div className="flex flex-wrap gap-1">
@@ -1334,6 +1374,24 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             );
           })}
         </div>
+      )}
+
+      {planModal==='create' && (
+        <Modal title="Neuen Plan erstellen" onClose={()=>setPlanModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Plan-Name *</label>
+              <input value={planForm.name} onChange={e=>setPlanForm(f=>({...f,name:e.target.value}))}
+                placeholder="z. B. Ostern 2025, Sommer-Serie…" className={"w-full "+INP} autoFocus
+                onKeyDown={e=>e.key==='Enter'&&createPlan()}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={createPlan} disabled={!planForm.name.trim()}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Erstellen</button>
+              <button onClick={()=>setPlanModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {modal==='create' && (
@@ -1407,6 +1465,15 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           <SI p={IC.send} size={12}/> Teilen
         </button>
         {onChange && !allowedGroups && (
+          <button onClick={()=>{
+            if (!selSchicht.abfrageToken) { const t=genId().slice(0,8); updateSchicht(selSchicht.id,{abfrageToken:t}); toast('Abfrage-Link generiert'); }
+            setModal('abfrage_link');
+          }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{background:'rgba(99,102,241,0.15)',color:'#818cf8'}}>
+            📋 Abfrage
+          </button>
+        )}
+        {onChange && !allowedGroups && (
           <button onClick={addSchSlot} disabled={ma.gruppen.length===0}
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/8 text-slate-800 hover:bg-black/12 disabled:opacity-40 transition-all">
             <SI p={IC.plus} size={12}/> Slot
@@ -1436,7 +1503,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <span className="text-xs font-semibold text-slate-500">{g?.name||'?'}</span>
                 <span className="text-slate-700 text-xs">›</span>
                 <span className="text-xs font-semibold text-slate-700">{d?.name||'?'}</span>
-                {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>×2</span>}
+                {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Doppeldienst</span>}
                 {wCount>0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
                 {onChange && <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>}
               </div>
@@ -1450,28 +1517,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                     </button>
                   : p1 && <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{background:p1.farbe+'25',color:p1.farbe,border:`1px solid ${p1.farbe}44`}}><Avatar name={p1.name} farbe={p1.farbe} size={16}/>{p1.name}</span>
                 }
-                {/* Assign P2 */}
-                {sl.doppelt && ((onChange && (!allowedGroups || allowedGroups.includes(sl.gruppeId)))
-                  ? <button onClick={() => { setSelSlot({...sl,isSecond:true}); setModal('assign'); }}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all"
-                      style={p2?{background:p2.farbe+'25',color:p2.farbe,border:`1px solid ${p2.farbe}44`}:{background:'rgba(0,0,0,0.04)',color:'#64748b',border:'1px solid rgba(0,0,0,0.08)'}}>
-                      {p2?<><Avatar name={p2.name} farbe={p2.farbe} size={16}/><span>{p2.name}</span></>:'+ Zuweisen (2)'}
-                    </button>
-                  : p2 && <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{background:p2.farbe+'25',color:p2.farbe,border:`1px solid ${p2.farbe}44`}}><Avatar name={p2.name} farbe={p2.farbe} size={16}/>{p2.name}</span>
-                )}
                 {/* Tausch buttons — shown when myPerson is assigned to this slot */}
                 {onTausch && myPerson && sl.personId===myPerson.id && !(ma.tauschAnfragen||[]).some(r=>r.slotId===sl.id&&!r.isSecond) && (
                   <button onClick={()=>{setTauschSlot({slotId:sl.id,isSecond:false});setTauschNote('');setModal('tausch');}}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all"
                     style={{background:'rgba(251,146,60,0.12)',color:'#f97316',border:'1px solid rgba(251,146,60,0.25)'}}>
                     🔄 Tauschen
-                  </button>
-                )}
-                {onTausch && myPerson && sl.doppelt && sl.personId2===myPerson.id && !(ma.tauschAnfragen||[]).some(r=>r.slotId===sl.id&&r.isSecond) && (
-                  <button onClick={()=>{setTauschSlot({slotId:sl.id,isSecond:true});setTauschNote('');setModal('tausch');}}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all"
-                    style={{background:'rgba(251,146,60,0.12)',color:'#f97316',border:'1px solid rgba(251,146,60,0.25)'}}>
-                    🔄 Tauschen (2)
                   </button>
                 )}
               </div>
@@ -1676,6 +1727,27 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           </div>
         </Modal>
       )}
+
+      {modal==='abfrage_link' && selSchicht && (
+        <Modal title="Abfrage-Link" onClose={()=>setModal('detail_view')}>
+          <div className="space-y-4">
+            <p className="text-slate-500 text-xs">Teile diesen Link mit deinen Team-Mitgliedern. Sie können ohne Login ihre Verfügbarkeit eintragen.</p>
+            <div className="bg-black/5 rounded-xl p-3 text-xs font-mono text-slate-700 break-all select-all">
+              {window.location.origin + window.location.pathname + '?abfrage=' + (selSchicht.abfrageToken||'…')}
+            </div>
+            <button onClick={()=>navigator.clipboard?.writeText(window.location.origin+window.location.pathname+'?abfrage='+(selSchicht.abfrageToken||'')).then(()=>toast('Link kopiert 📋'))}
+              className="w-full bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+              Link kopieren
+            </button>
+            {selSchicht.abfrageToken && (
+              <button onClick={()=>{updateSchicht(selSchicht.id,{abfrageToken:''});setModal('detail_view');toast('Abfrage deaktiviert');}}
+                className="w-full text-red-400 text-xs py-1 hover:text-red-500 transition-all">
+                Abfrage deaktivieren
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
@@ -1684,30 +1756,39 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
 // STATISTIK VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const StatistikView = ({ ma }) => {
-  const [tab, setTab] = useState('personen');
+  const [tab,        setTab]        = useState('personen');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo,   setFilterTo]   = useState('');
+  const [filterGrp,  setFilterGrp]  = useState('all');
+
+  const filtSchichten = useMemo(() => ma.schichten.filter(s =>
+    (!filterFrom || s.datum >= filterFrom) && (!filterTo || s.datum <= filterTo)
+  ), [ma.schichten, filterFrom, filterTo]);
 
   const stats = useMemo(() => {
-    return ma.personen.map(p => {
-      let total = 0;
-      const byDienst = {};
-      ma.schichten.forEach(s => s.slots.forEach(sl => {
-        const hit = sl.personId===p.id || sl.personId2===p.id;
-        if (!hit) return;
-        total++;
-        const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
-        const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
-        const key = d?.name||'?';
-        byDienst[key] = (byDienst[key]||0)+1;
-      }));
-      return { p, total, byDienst };
-    }).sort((a,b) => b.total-a.total);
-  }, [ma]);
+    return ma.personen
+      .filter(p => filterGrp==='all' || (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(filterGrp))
+      .map(p => {
+        let total = 0;
+        const byDienst = {};
+        filtSchichten.forEach(s => s.slots.forEach(sl => {
+          if (sl.personId!==p.id) return;
+          total++;
+          const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
+          const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+          byDienst[d?.name||'?'] = (byDienst[d?.name||'?']||0)+1;
+        }));
+        return { p, total, byDienst };
+      }).sort((a,b) => b.total-a.total);
+  }, [ma, filtSchichten, filterGrp]);
 
   const teamStats = useMemo(() => {
-    return ma.gruppen.map(g => {
+    return ma.gruppen
+      .filter(g => filterGrp==='all' || g.id===filterGrp)
+      .map(g => {
       let totalSlots = 0, filledSlots = 0;
       const byDienst = {};
-      ma.schichten.forEach(s => s.slots.forEach(sl => {
+      filtSchichten.forEach(s => s.slots.forEach(sl => {
         if (sl.gruppeId !== g.id) return;
         totalSlots++;
         if (sl.personId) filledSlots++;
@@ -1729,6 +1810,26 @@ const StatistikView = ({ ma }) => {
       <div>
         <h1 className="text-xl font-bold grad">Statistik</h1>
         <p className="text-slate-500 text-sm mt-0.5">Einsätze & Team-Auslastung</p>
+      </div>
+
+      <div className="glass rounded-2xl p-3 space-y-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 text-xs">Von</span>
+            <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} className="bg-black/5 border border-black/10 rounded-lg px-2 py-1 text-xs text-slate-800"/>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 text-xs">Bis</span>
+            <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} className="bg-black/5 border border-black/10 rounded-lg px-2 py-1 text-xs text-slate-800"/>
+          </div>
+          <select value={filterGrp} onChange={e=>setFilterGrp(e.target.value)} className="bg-black/5 border border-black/10 rounded-lg px-2 py-1.5 text-xs text-slate-700">
+            <option value="all">Alle Teams</option>
+            {ma.gruppen.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          {(filterFrom||filterTo||filterGrp!=='all') && (
+            <button onClick={()=>{setFilterFrom('');setFilterTo('');setFilterGrp('all');}} className="text-slate-400 text-xs hover:text-slate-600 transition-all">✕ Zurücksetzen</button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-2">
@@ -2292,6 +2393,130 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ABFRAGE FORM  (public — no login required)
+// ═══════════════════════════════════════════════════════════════════════════════
+const AbfrageForm = ({ token }) => {
+  const [schicht, setSchicht] = useState(null);
+  const [maData,  setMaData]  = useState(null);
+  const [pid,     setPid]     = useState('');
+  const [form,    setForm]    = useState({});
+  const [done,    setDone]    = useState(false);
+  const [err,     setErr]     = useState('');
+
+  useEffect(() => {
+    const search = async () => {
+      for (const pr of PROFILES) {
+        try {
+          const snap = await db.collection(pr.id).doc('ma').get();
+          const d = snap.data();
+          const s = (d?.schichten||[]).find(s=>s.abfrageToken===token);
+          if (s) { setSchicht(s); setMaData(d); return; }
+        } catch {}
+      }
+      setErr('Abfrage nicht gefunden oder bereits abgelaufen.');
+    };
+    search();
+  }, [token]);
+
+  const submit = async () => {
+    if (!pid) return;
+    const wishes = Object.entries(form).filter(([,v])=>v&&v!=='neutral').map(([slotId,art])=>({personId:pid,slotId,art}));
+    for (const pr of PROFILES) {
+      try {
+        const snap = await db.collection(pr.id).doc('ma').get();
+        const d = snap.data();
+        if (!(d?.schichten||[]).find(s=>s.abfrageToken===token)) continue;
+        const newSchichten = (d.schichten||[]).map(s => {
+          if (s.abfrageToken!==token) return s;
+          return {...s, wuensche:[...(s.wuensche||[]).filter(w=>w.personId!==pid),...wishes]};
+        });
+        await db.collection(pr.id).doc('ma').update({schichten:newSchichten});
+        setDone(true); return;
+      } catch {}
+    }
+  };
+
+  if (err) return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+      <div className="glass rounded-2xl p-8 max-w-sm w-full text-center glow">
+        <p className="text-red-400 font-semibold text-sm">{err}</p>
+      </div>
+    </div>
+  );
+  if (!schicht) return <div className="min-h-screen flex items-center justify-center"><div className="text-slate-500 text-sm">Wird geladen…</div></div>;
+  if (done) return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+      <div className="glass rounded-2xl p-8 max-w-sm w-full text-center glow space-y-3">
+        <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{background:'rgba(16,185,129,0.1)'}}>
+          <SI p={IC.check} size={24} stroke={2.5} style={{color:'#10b981'}}/>
+        </div>
+        <h2 className="font-black text-lg text-slate-900">Gespeichert!</h2>
+        <p className="text-slate-500 text-sm">Deine Verfügbarkeit wurde eingetragen.</p>
+      </div>
+    </div>
+  );
+
+  const gruppen = maData?.gruppen||[];
+  const personen = maData?.personen||[];
+  return (
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="max-w-md mx-auto space-y-4 up">
+        <div className="glass rounded-2xl p-5 glow">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-full border border-slate-300 flex items-center justify-center bg-black flex-shrink-0">
+              <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:8,color:'#fff',letterSpacing:'-0.5px'}}>K21</span>
+            </div>
+            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:11,color:'#0f172a',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
+          </div>
+          <h1 className="text-lg font-black text-slate-900">{schicht.titel||fmtDe(schicht.datum)}</h1>
+          <p className="text-slate-500 text-sm">{fmtDe(schicht.datum)} · {schicht.slots.length} Slots</p>
+        </div>
+        <div className="glass rounded-2xl p-4 glow space-y-3">
+          <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">Dein Name</label>
+          <select value={pid} onChange={e=>setPid(e.target.value)} className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-800">
+            <option value="">— auswählen —</option>
+            {personen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        {pid && schicht.slots.length>0 && (
+          <div className="glass rounded-2xl p-4 glow space-y-4">
+            <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">Deine Verfügbarkeit</label>
+            {schicht.slots.map(sl=>{
+              const g=gruppen.find(x=>x.id===sl.gruppeId);
+              const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);
+              const val=form[sl.id]||'neutral';
+              return (
+                <div key={sl.id} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:g?.farbe||'#8b5cf6'}}/>
+                    <span className="text-xs font-semibold text-slate-700">{d?.name||'?'} <span className="text-slate-400 font-normal">({g?.name})</span></span>
+                    {sl.doppelt&&<span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Doppeldienst</span>}
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[['wunschdienst','👍 Kann','#10b981'],['neutral','Neutral','#64748b'],['wunschfrei','👎 Kann nicht','#ef4444']].map(([v,l,col])=>(
+                      <button key={v} onClick={()=>setForm(f=>({...f,[sl.id]:v}))}
+                        className="flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all border"
+                        style={val===v?{background:col+'18',color:col,borderColor:col+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.08)'}}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {pid && (
+          <button onClick={submit} className="w-full bg-black hover:bg-slate-900 text-white font-bold py-3.5 text-sm transition-all" style={{borderRadius:30}}>
+            Absenden
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = () => {
@@ -2428,6 +2653,8 @@ const App = () => {
   // Merged view used by all child components
   const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[], praeferenzen: sharedMa.praeferenzen||[] };
 
+  const abfrageToken = new URLSearchParams(window.location.search).get('abfrage');
+  if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
   if (currentUser === undefined) return <LoginScreen onLogin={login} ownerPin={ownerPin}/>;
 
   const TABS = [
