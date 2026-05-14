@@ -31,6 +31,8 @@
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.3); cursor: pointer; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: rgba(0,0,0,0.25) !important; }
     select option { background: #ffffff; color: #0f172a; }
+    button { -webkit-tap-highlight-color: transparent; user-select: none; }
+    button:active:not(:disabled) { transform: scale(0.97); }
     @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeIn { from{opacity:0}to{opacity:1} }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -337,7 +339,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
           <p className="text-slate-500 text-sm mt-0.5">{(allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen).length} Mitarbeiter</p>
         </div>
         {onChange && (
-          <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+          <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.plus} size={13}/> Person
           </button>
         )}
@@ -439,7 +441,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                   <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden</p>
                 </div>
                 <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={visPersonen.length<2}
-                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all rounded-full">
                   <SI p={IC.plus} size={12}/> Ausnahme
                 </button>
               </div>
@@ -470,7 +472,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                   <p className="text-slate-500 text-xs mt-0.5">Welche Dienste jemand bevorzugt oder vermeidet</p>
                 </div>
                 <button onClick={()=>{setPrefForm({personId:'',dienstId:'',prio:'bevorzugt'});setPrefModal(true);}} disabled={visPersonen.length===0||allDienste.length===0}
-                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all rounded-full">
                   <SI p={IC.plus} size={12}/> Präferenz
                 </button>
               </div>
@@ -534,10 +536,10 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                 toast('Ausnahme gespeichert');
                 setKonModal(false);
               }} disabled={!konForm.p1||!konForm.p2}
-                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all rounded-full">
                 Speichern
               </button>
-              <button onClick={()=>setKonModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={()=>setKonModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -589,10 +591,10 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                   toast('Präferenz gespeichert');
                   setPrefModal(false);
                 }} disabled={!prefForm.personId||!prefForm.dienstId}
-                  className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                  className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all rounded-full">
                   Speichern
                 </button>
-                <button onClick={()=>setPrefModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+                <button onClick={()=>setPrefModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all rounded-full">Abbrechen</button>
               </div>
             </div>
           </Modal>
@@ -620,7 +622,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                           set('gruppenIds',next);
                           set('dienste',[]);
                         }}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
+                        className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all border"
                         style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
                         {g.name}
                       </button>
@@ -647,7 +649,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                         return (
                           <button key={id} type="button"
                             onClick={()=>{ const cur=form.dienste||[]; set('dienste',on?cur.filter(x=>x!==id):[...cur,id]); }}
-                            className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
+                            className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all border"
                             style={on?{background:grp.farbe+'22',color:grp.farbe,borderColor:grp.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
                             {name}
                           </button>
@@ -689,7 +691,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                       <div className="flex gap-1.5">
                         {ROLE_OPTIONS.map(r=>(
                           <button key={r} type="button" onClick={()=>set('role',r)}
-                            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                            className={`flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/10'}`}>
                             {ROLE_LABELS[r]}
                           </button>
                         ))}
@@ -709,7 +711,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                                   {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
                                     <button key={lvl} type="button"
                                       onClick={()=>set('areaAccess',{...form.areaAccess,[pr.id]:lvl})}
-                                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                                      className={`flex-1 py-1 rounded-full text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/10'}`}>
                                       {lbl}
                                     </button>
                                   ))}
@@ -728,7 +730,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                                           const next=on?cur.filter(x=>x!==g.id):[...cur,g.id];
                                           set('areaGroups',{...form.areaGroups,[pr.id]:next});
                                         }}
-                                        className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
+                                        className="px-2 py-0.5 rounded-full text-xs font-semibold transition-all border"
                                         style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
                                         {g.name}
                                       </button>
@@ -754,8 +756,8 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
               </div>
 
               <div className="flex gap-2 pt-1">
-                <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Speichern</button>
-                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+                <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all rounded-full">Speichern</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all rounded-full">Abbrechen</button>
               </div>
             </div>
         </Modal>
@@ -813,7 +815,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
           <p className="text-slate-500 text-sm mt-0.5">{ma.gruppen.length} Gruppen</p>
         </div>
         {onChange && !allowedGroups && (
-          <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+          <button onClick={openAdd} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.plus} size={13}/> Gruppe
           </button>
         )}
@@ -843,7 +845,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
                 </div>
                 <div className="space-y-1.5 mb-3">
                   {(g.dienste||[]).map(d => (
-                    <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
+                    <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
                       <span className="text-slate-700 text-sm flex-1">{d.name}</span>
                       {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
                     </div>
@@ -854,7 +856,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
                   <input value={newDienst[g.id]||''} onChange={e=>setNewDienst(p=>({...p,[g.id]:e.target.value}))}
                     placeholder="Neuer Dienst…" className={INP_SM+" flex-1"}
                     onKeyDown={e=>e.key==='Enter'&&addDienst(g.id)}/>
-                  <button onClick={() => addDienst(g.id)} className="px-3 py-1.5 rounded-lg bg-black/8 hover:bg-black/10 text-slate-800 text-xs font-semibold transition-all">+ Dienst</button>
+                  <button onClick={() => addDienst(g.id)} className="px-3 py-1.5 rounded-full bg-black/8 hover:bg-black/10 text-slate-800 text-xs font-semibold transition-all">+ Dienst</button>
                 </div>
                 )}
                 {members.length>0 && (
@@ -881,8 +883,8 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
               <ColorPicker value={form.farbe} onChange={c=>setForm(p=>({...p,farbe:c}))}/>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={saveGruppe} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={saveGruppe} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm rounded-full">Speichern</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -964,7 +966,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
         </div>
         {onChange && (
           <button onClick={openAdd} disabled={ma.gruppen.length===0}
-            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.plus} size={13}/> Vorlage
           </button>
         )}
@@ -1027,7 +1029,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
               <div className="flex gap-1.5">
                 {[['einzel','Einzel-Tag'],['zeitraum','Zeitraum / Mehrtägig']].map(([a,l])=>(
                   <button key={a} type="button" onClick={()=>setForm(f=>({...f,art:a}))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.art===a?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                    className={`flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${form.art===a?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/10'}`}>
                     {l}
                   </button>
                 ))}
@@ -1055,11 +1057,11 @@ const VorlagenView = ({ ma, onChange, toast }) => {
                 <div className="flex gap-1 flex-wrap mb-3">
                   {form.tage.map((tag,i)=>(
                     <button key={tag.id} type="button" onClick={()=>setSelTag(i)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${selTag===i?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${selTag===i?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/10'}`}>
                       {tag.label}
                     </button>
                   ))}
-                  <button type="button" onClick={addTag} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-black/5 text-slate-500 hover:text-slate-700 transition-all">
+                  <button type="button" onClick={addTag} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-black/5 text-slate-500 hover:text-slate-700 transition-all">
                     <SI p={IC.plus} size={11}/>
                   </button>
                 </div>
@@ -1083,8 +1085,8 @@ const VorlagenView = ({ ma, onChange, toast }) => {
             )}
 
             <div className="flex gap-2 pt-1">
-              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
-              <button onClick={()=>setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm rounded-full">Speichern</button>
+              <button onClick={()=>setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -1365,9 +1367,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             <p className="text-slate-500 text-sm mt-0.5">{monthNames[calYM.m]} {calYM.y}</p>
           </div>
           <div className="flex gap-2 items-center">
-            <button onClick={()=>setListView('list')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-600 hover:bg-black/8 transition-all">Liste</button>
-            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m-1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/8 transition-all"><SI p={IC.chevLeft} size={13}/></button>
-            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m+1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/8 transition-all"><SI p={IC.chevronRight} size={13}/></button>
+            <button onClick={()=>setListView('list')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-black/5 text-slate-600 hover:bg-black/10 transition-all">Liste</button>
+            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m-1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/10 transition-all"><SI p={IC.chevLeft} size={13}/></button>
+            <button onClick={()=>setCalYM(p=>{const d=new Date(p.y,p.m+1,1);return{y:d.getFullYear(),m:d.getMonth()};})} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 hover:bg-black/10 transition-all"><SI p={IC.chevronRight} size={13}/></button>
           </div>
         </div>
         <div className="glass rounded-2xl overflow-hidden">
@@ -1412,18 +1414,18 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         </div>
         <div className="flex gap-2">
           {onChange && !allowedGroups && <button onClick={runAutoAll} disabled={ma.schichten.length===0}
-            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.zap} size={13}/> Auto-Plan
           </button>}
-          <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+          <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             📅 Kalender
           </button>
           {ma.schichten.length>0 && <button onClick={()=>{ setShareScope('all'); setShareText(buildPlanText(ma)); setModal('share'); }}
-            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.send} size={13}/> Teilen
           </button>}
           {onChange && !allowedGroups && <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
-            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all rounded-full">
             <SI p={IC.plus} size={13}/> Schicht
           </button>}
         </div>
@@ -1466,12 +1468,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       {/* Plan switcher */}
       {(onChange || (ma.plaene||[]).length>0) && (
         <div className="flex gap-1.5 flex-wrap items-center">
-          <button onClick={()=>setSelPlanId('all')} style={{borderRadius:30,background:selPlanId==='all'?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId==='all'?'#ffffff':'#64748b'}}
-            className="px-3 py-1.5 text-xs font-semibold transition-all">Alle</button>
+          <button onClick={()=>setSelPlanId('all')} style={{background:selPlanId==='all'?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId==='all'?'#ffffff':'#64748b'}}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all">Alle</button>
           {(ma.plaene||[]).map(p=>(
             <div key={p.id} className="flex items-center gap-0.5">
-              <button onClick={()=>setSelPlanId(p.id)} style={{borderRadius:30,background:selPlanId===p.id?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId===p.id?'#ffffff':'#64748b'}}
-                className="px-3 py-1.5 text-xs font-semibold transition-all">{p.name}</button>
+              <button onClick={()=>setSelPlanId(p.id)} style={{background:selPlanId===p.id?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId===p.id?'#ffffff':'#64748b'}}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all">{p.name}</button>
               {onChange && !allowedGroups && selPlanId===p.id && (
                 <button onClick={()=>deletePlan(p.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-red-400 transition-all"><SI p={IC.x} size={10}/></button>
               )}
@@ -1479,8 +1481,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           ))}
           {onChange && !allowedGroups && (
             <button onClick={()=>{setPlanForm({name:''});setPlanModal('create');}}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-all"
-              style={{borderRadius:30,background:'rgba(0,0,0,0.04)',border:'1px dashed rgba(0,0,0,0.15)'}}>
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-500 hover:text-slate-800 transition-all"
+              style={{background:'rgba(0,0,0,0.04)',border:'1px dashed rgba(0,0,0,0.15)'}}>
               <SI p={IC.plus} size={10}/> Plan
             </button>
           )}
@@ -1550,8 +1552,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={dupSchicht} disabled={!dupDate}
-                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Duplizieren</button>
-              <button onClick={()=>setDupModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all rounded-full">Duplizieren</button>
+              <button onClick={()=>setDupModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -1568,8 +1570,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={createPlan} disabled={!planForm.name.trim()}
-                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Erstellen</button>
-              <button onClick={()=>setPlanModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all rounded-full">Erstellen</button>
+              <button onClick={()=>setPlanModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -1605,8 +1607,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               );
             })()}
             <div className="flex gap-2 pt-1">
-              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Erstellen</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm rounded-full">Erstellen</button>
+              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm rounded-full">Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -1634,38 +1636,38 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       <div className="flex gap-2 flex-wrap">
         {onChange && !allowedGroups && <>
           <button onClick={togglePublish}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${selSchicht.veroeffentlicht?'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/40':'bg-black/5 text-slate-700 hover:bg-black/10'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${selSchicht.veroeffentlicht?'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/40':'bg-black/5 text-slate-700 hover:bg-black/10'}`}>
             {selSchicht.veroeffentlicht?'✓ Veröffentlicht':'Veröffentlichen'}
           </button>
-          <button onClick={runAuto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-all">
+          <button onClick={runAuto} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-all">
             <SI p={IC.zap} size={12}/> Auto-Einteilung
           </button>
         </>}
         <button onClick={()=>{ setShareScope('single'); setShareText(buildPlanText(ma,selSchicht)); setModal('share'); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/8 transition-all">
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/10 transition-all">
           <SI p={IC.send} size={12}/> Teilen
         </button>
         {onChange && !allowedGroups && (
           <button onClick={()=>{
             if (!selSchicht.abfrageToken) { const t=genId().slice(0,8); updateSchicht(selSchicht.id,{abfrageToken:t}); toast('Abfrage-Link generiert'); }
             setModal('abfrage_link');
-          }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+          }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{background:'rgba(99,102,241,0.15)',color:'#818cf8'}}>
             📋 Abfrage
           </button>
         )}
         {onChange && !allowedGroups && <>
           <button onClick={saveAsVorlage}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>
             <SI p={IC.copy} size={12}/> Als Vorlage
           </button>
           <button onClick={()=>{setDupDate(selSchicht.datum);setDupModal(selSchicht);}}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/8 transition-all">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-black/5 text-slate-700 hover:bg-black/10 transition-all">
             <SI p={IC.copy} size={12}/> Duplizieren
           </button>
           <button onClick={addSchSlot} disabled={ma.gruppen.length===0}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-black/8 text-slate-800 hover:bg-black/12 disabled:opacity-40 transition-all">
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-black/8 text-slate-800 hover:bg-black/15 disabled:opacity-40 transition-all">
             <SI p={IC.plus} size={12}/> Slot
           </button>
         </>}
@@ -1783,10 +1785,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                     {r.note && <div className="text-slate-500 text-xs truncate">„{r.note}"</div>}
                   </div>
                   {canAccept && <button onClick={()=>acceptTausch(r)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                    className="px-3 py-1.5 rounded-full text-xs font-bold transition-all"
                     style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>Annehmen</button>}
                   {isOwn && <button onClick={()=>cancelTausch(r)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-500 hover:text-red-400">Zurückziehen</button>}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium transition-all text-slate-500 hover:text-red-400">Zurückziehen</button>}
                 </div>
               );
             })}
@@ -1810,8 +1812,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                   className={"w-full "+INP} autoFocus onKeyDown={e=>e.key==='Enter'&&submitTausch()}/>
               </div>
               <div className="flex gap-2 pt-1">
-                <button onClick={submitTausch} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Anfrage stellen</button>
-                <button onClick={()=>setModal('detail_view')} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+                <button onClick={submitTausch} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm rounded-full">Anfrage stellen</button>
+                <button onClick={()=>setModal('detail_view')} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm rounded-full">Abbrechen</button>
               </div>
             </div>
           </Modal>
@@ -1875,8 +1877,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 );
               })}
               <div className="flex gap-2 pt-2">
-                <button onClick={saveWishes} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
-                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+                <button onClick={saveWishes} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm rounded-full">Speichern</button>
+                <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm rounded-full">Abbrechen</button>
               </div>
             </div>
           </Modal>
@@ -1931,7 +1933,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               {window.location.origin + window.location.pathname + '?abfrage=' + (selSchicht.abfrageToken||'…')}
             </div>
             <button onClick={()=>navigator.clipboard?.writeText(window.location.origin+window.location.pathname+'?abfrage='+(selSchicht.abfrageToken||'')).then(()=>toast('Link kopiert 📋'))}
-              className="w-full bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+              className="w-full bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all rounded-full">
               Link kopieren
             </button>
             {selSchicht.abfrageToken && (
@@ -2027,7 +2029,7 @@ const StatistikView = ({ ma }) => {
           <div className="flex gap-1 ml-auto">
             {[['desc','Meiste'],['asc','Wenigste'],['alpha','A–Z']].map(([m,l])=>(
               <button key={m} onClick={()=>setSortMode(m)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${sortMode===m?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>{l}</button>
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${sortMode===m?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/10'}`}>{l}</button>
             ))}
           </div>
           {(filterFrom||filterTo||filterGrp!=='all') && (
@@ -2039,7 +2041,7 @@ const StatistikView = ({ ma }) => {
       <div className="flex gap-2">
         {[['personen','Mitarbeiter'],['teams','Teams']].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
-            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${tab===id?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${tab===id?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/10'}`}>
             {label}
           </button>
         ))}
@@ -2210,7 +2212,7 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile }) => 
         <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPw?'none':'disc'}} value={pin2} onChange={e=>setPin2(e.target.value)}
           placeholder="PIN bestätigen" className={"w-full "+INP}
           onKeyDown={e=>e.key==='Enter'&&savePin()}/>
-        <button onClick={savePin} className="w-full py-2.5 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all" style={{borderRadius:30}}>PIN speichern</button>
+        <button onClick={savePin} className="w-full py-2.5 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all rounded-full">PIN speichern</button>
       </div>
 
       {/* Backup */}
@@ -2299,8 +2301,8 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
         </div>
         {can.profiles && (
           <button onClick={()=>{setForm({name:'',pin:'',role:'viewer',permissions:{},areaAccess:{},areaGroups:{}});setModal('add');}}
-            className="flex items-center gap-1.5 text-white text-xs font-bold px-3.5 py-2 transition-all"
-            style={{background:'#000000',borderRadius:30}}>
+            className="flex items-center gap-1.5 text-white text-xs font-bold px-3.5 py-2 rounded-full transition-all"
+            style={{background:'#000000'}}>
             <SI p={IC.plus} size={13}/> Profil
           </button>
         )}
@@ -2423,7 +2425,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
               <div className="flex gap-1.5">
                 {ROLE_OPTIONS.map(r=>(
                   <button key={r} onClick={()=>setForm(f=>({...f,role:r,permissions:{}}))}
-                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                    className={`flex-1 py-1.5 rounded-full text-xs font-semibold transition-all ${form.role===r?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/10'}`}>
                     {ROLE_LABELS[r]}
                   </button>
                 ))}
@@ -2445,7 +2447,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
                             {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
                               <button key={lvl} type="button"
                                 onClick={()=>setForm(f=>({...f,areaAccess:{...f.areaAccess,[pr.id]:lvl}}))}
-                                className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                                className={`flex-1 py-1 rounded-full text-xs font-semibold transition-all ${acc===lvl?'bg-slate-900 text-white':'bg-black/5 text-slate-500 hover:bg-black/10'}`}>
                                 {lbl}
                               </button>
                             ))}
@@ -2464,7 +2466,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
                                     const next = on?cur.filter(x=>x!==g.id):[...cur,g.id];
                                     setForm(f=>({...f,areaGroups:{...f.areaGroups,[pr.id]:next}}));
                                   }}
-                                  className="px-2 py-0.5 rounded-lg text-xs font-semibold transition-all border"
+                                  className="px-2 py-0.5 rounded-full text-xs font-semibold transition-all border"
                                   style={on?{background:g.farbe+'22',color:g.farbe,borderColor:g.farbe+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
                                   {g.name}
                                 </button>
@@ -2590,8 +2592,8 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
             </div>
             {err&&<p className="text-red-500 text-xs">{err}</p>}
             <button onClick={tryLogin} disabled={!name.trim()||!pin||!ready}
-              className="w-full py-3 text-sm font-bold text-white disabled:opacity-40 transition-all"
-              style={{background:'#000000',borderRadius:30}}>
+              className="w-full py-3 rounded-full text-sm font-bold text-white disabled:opacity-40 transition-all"
+              style={{background:'#000000'}}>
               {ready?'Anmelden':'Verbinde…'}
             </button>
           </div>
@@ -2716,7 +2718,7 @@ const AbfrageForm = ({ token }) => {
           </div>
         )}
         {pid && (
-          <button onClick={submit} className="w-full bg-black hover:bg-slate-900 text-white font-bold py-3.5 text-sm transition-all" style={{borderRadius:30}}>
+          <button onClick={submit} className="w-full bg-black hover:bg-slate-900 text-white font-bold py-3.5 text-sm transition-all rounded-full">
             Absenden
           </button>
         )}
@@ -2912,7 +2914,7 @@ const App = () => {
           {/* Right: sync + role + logout */}
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28 justify-end">
             <SyncDot state={syncState}/>
-            <span className="pill text-xs" style={{borderRadius:30, background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? currentUser.name.split(' ')[0] : 'Gast'}</span>
+            <span className="pill text-xs" style={{background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? currentUser.name.split(' ')[0] : 'Gast'}</span>
             <button onClick={logout} title="Abmelden" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.logout} size={14}/></button>
           </div>
         </div>
