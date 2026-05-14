@@ -219,12 +219,9 @@ const SyncDot = ({ state }) => {
   const MAP = { connecting:['#64748b','Verbinden…'], synced:['#10b981','Sync OK'], saving:['#f59e0b','Speichern…'], error:['#ef4444','Offline'] };
   const [col, label] = MAP[state] || MAP.connecting;
   return (
-    <div className="flex items-center gap-1" title={label}>
-      <span style={{width:7,height:7,borderRadius:'50%',background:col,display:'inline-block',
-        boxShadow:state==='synced'?`0 0 5px ${col}99`:'none',
-        animation:state==='saving'?'pulse 1s infinite':'none'}}/>
-      <span className="text-slate-600 text-xs hidden sm:inline">{label}</span>
-    </div>
+    <div title={label} style={{width:9,height:9,borderRadius:'50%',background:col,flexShrink:0,
+      boxShadow:state==='synced'?`0 0 5px ${col}99`:'none',
+      animation:state==='saving'?'pulse 1s infinite':'none'}}/>
   );
 };
 
