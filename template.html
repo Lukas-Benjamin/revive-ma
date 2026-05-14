@@ -772,41 +772,72 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
 // VORLAGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const VorlagenView = ({ ma, onChange, toast }) => {
-  const [modal, setModal] = useState(null);
-  const [form,  setForm]  = useState({ name:'', slots:[] });
+  const [modal,  setModal]  = useState(null);
+  const [form,   setForm]   = useState({ name:'', art:'einzel', slots:[], tage:[{id:genId(),label:'Tag 1',slots:[]}] });
+  const [selTag, setSelTag] = useState(0);
 
-  const openAdd  = () => { setForm({ name:'', slots:[] }); setModal('add'); };
-  const openEdit = v => { setForm({ name:v.name, slots:v.slots.map(s=>({...s})) }); setModal({ mode:'edit', id:v.id }); };
-
-  const addSlot = () => {
-    const g = ma.gruppen[0]; if (!g) return;
-    const d = (g.dienste||[])[0];
-    setForm(p => ({ ...p, slots:[...p.slots, { id:genId(), gruppeId:g.id, dienstId:d?.id||'', doppelt:false }] }));
+  const emptyForm = () => ({ name:'', art:'einzel', slots:[], tage:[{id:genId(),label:'Tag 1',slots:[]}] });
+  const openAdd  = () => { setForm(emptyForm()); setSelTag(0); setModal('add'); };
+  const openEdit = v => {
+    setForm({ name:v.name, art:v.art||'einzel', slots:(v.slots||[]).map(s=>({...s})),
+      tage:(v.tage||[{id:genId(),label:'Tag 1',slots:[]}]).map(t=>({...t,slots:(t.slots||[]).map(s=>({...s}))})) });
+    setSelTag(0); setModal({ mode:'edit', id:v.id });
   };
 
-  const updSlot = (sid, key, val) => setForm(p => ({ ...p, slots:p.slots.map(s=>s.id===sid?{...s,[key]:val}:s) }));
-  const remSlot = sid => setForm(p => ({ ...p, slots:p.slots.filter(s=>s.id!==sid) }));
+  // ── Einzel slot helpers ──
+  const mkSlot = () => { const g=ma.gruppen[0]; if(!g)return null; const d=(g.dienste||[])[0]; return {id:genId(),gruppeId:g.id,dienstId:d?.id||'',doppelt:false}; };
+  const addSlot    = () => { const s=mkSlot(); if(s) setForm(f=>({...f,slots:[...f.slots,s]})); };
+  const updSlot    = (sid,k,v) => setForm(f=>({...f,slots:f.slots.map(s=>s.id===sid?{...s,[k]:v}:s)}));
+  const remSlot    = sid => setForm(f=>({...f,slots:f.slots.filter(s=>s.id!==sid)}));
+
+  // ── Zeitraum tag/slot helpers ──
+  const addTag     = () => { const idx=form.tage.length; setForm(f=>({...f,tage:[...f.tage,{id:genId(),label:`Tag ${idx+1}`,slots:[]}]})); setSelTag(idx); };
+  const remTag     = i  => { setForm(f=>({...f,tage:f.tage.filter((_,j)=>j!==i)})); setSelTag(p=>Math.max(0,p-1)); };
+  const updTagLabel= (i,lbl) => setForm(f=>({...f,tage:f.tage.map((t,j)=>j===i?{...t,label:lbl}:t)}));
+  const addTagSlot = () => { const s=mkSlot(); if(!s)return; setForm(f=>({...f,tage:f.tage.map((t,i)=>i===selTag?{...t,slots:[...t.slots,s]}:t)})); };
+  const updTagSlot = (sid,k,v) => setForm(f=>({...f,tage:f.tage.map((t,i)=>i===selTag?{...t,slots:t.slots.map(s=>s.id===sid?{...s,[k]:v}:s)}:t)}));
+  const remTagSlot = sid => setForm(f=>({...f,tage:f.tage.map((t,i)=>i===selTag?{...t,slots:t.slots.filter(s=>s.id!==sid)}:t)}));
+
+  const SlotRow = ({ s, onUpd, onRem }) => {
+    const g = ma.gruppen.find(x=>x.id===s.gruppeId);
+    return (
+      <div className="flex gap-2 items-center">
+        <select value={s.gruppeId} onChange={e=>{ const g2=ma.gruppen.find(x=>x.id===e.target.value); onUpd(s.id,'gruppeId',e.target.value); if(g2?.dienste?.[0])onUpd(s.id,'dienstId',g2.dienste[0].id); }} className={INP_SM+" flex-1"}>
+          {ma.gruppen.map(g2=><option key={g2.id} value={g2.id}>{g2.name}</option>)}
+        </select>
+        <select value={s.dienstId} onChange={e=>onUpd(s.id,'dienstId',e.target.value)} className={INP_SM+" flex-1"}>
+          <option value="">— Dienst —</option>
+          {(g?.dienste||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <button type="button" onClick={()=>onUpd(s.id,'doppelt',!s.doppelt)} className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${s.doppelt?'bg-amber-600/30 text-amber-400':'bg-black/5 text-slate-600'}`}>×2</button>
+        <button type="button" onClick={()=>onRem(s.id)} className="text-slate-600 hover:text-red-400 transition-all"><SI p={IC.x} size={13}/></button>
+      </div>
+    );
+  };
 
   const save = () => {
     if (!form.name.trim()) return;
+    const data = form.art==='zeitraum'
+      ? { name:form.name.trim(), art:'zeitraum', tage:form.tage, slots:[] }
+      : { name:form.name.trim(), art:'einzel',   slots:form.slots, tage:[] };
     if (modal==='add') {
-      onChange(m => ({ ...m, vorlagen:[...m.vorlagen, { id:genId(), name:form.name.trim(), slots:form.slots }] }));
+      onChange(m=>({ ...m, vorlagen:[...m.vorlagen,{id:genId(),...data}] }));
       toast('Vorlage erstellt');
     } else {
-      onChange(m => ({ ...m, vorlagen:m.vorlagen.map(v=>v.id===modal.id?{...v,name:form.name.trim(),slots:form.slots}:v) }));
+      onChange(m=>({ ...m, vorlagen:m.vorlagen.map(v=>v.id===modal.id?{...v,...data}:v) }));
       toast('Vorlage gespeichert');
     }
     setModal(null);
   };
 
-  const del = v => { onChange(m => ({ ...m, vorlagen:m.vorlagen.filter(x=>x.id!==v.id) })); toast('Vorlage gelöscht','warn'); };
+  const del = v => { onChange(m=>({ ...m, vorlagen:m.vorlagen.filter(x=>x.id!==v.id) })); toast('Vorlage gelöscht','warn'); };
 
   return (
     <div className="space-y-5 up">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold grad">Vorlagen</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Wiederverwendbare Dienstplan-Vorlagen</p>
+          <p className="text-slate-500 text-sm mt-0.5">Einzel- und Zeitraum-Vorlagen</p>
         </div>
         {onChange && (
           <button onClick={openAdd} disabled={ma.gruppen.length===0}
@@ -816,12 +847,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
         )}
       </div>
 
-      {ma.gruppen.length===0 && (
-        <div className="glass rounded-2xl p-4 text-slate-500 text-sm text-center">
-          Erstelle zuerst <strong className="text-slate-400">Gruppen &amp; Dienste</strong>.
-        </div>
-      )}
-
+      {ma.gruppen.length===0 && <div className="glass rounded-2xl p-4 text-slate-500 text-sm text-center">Erstelle zuerst <strong className="text-slate-400">Gruppen &amp; Dienste</strong>.</div>}
       {ma.vorlagen.length===0 && ma.gruppen.length>0 && (
         <div className="glass rounded-2xl py-16 text-center">
           <div className="text-slate-400 font-medium mb-1">Noch keine Vorlagen</div>
@@ -830,70 +856,112 @@ const VorlagenView = ({ ma, onChange, toast }) => {
       )}
 
       <div className="space-y-3">
-        {ma.vorlagen.map(v => (
-          <div key={v.id} className="glass rounded-2xl p-4 glow">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="font-semibold text-slate-800">{v.name}</span>
-              <span className="text-slate-600 text-xs">{v.slots.length} Slots</span>
-              {onChange && (
-                <div className="ml-auto flex gap-1">
-                  <button onClick={() => openEdit(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
-                  <button onClick={() => del(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+        {ma.vorlagen.map(v => {
+          const isZr = v.art==='zeitraum';
+          return (
+            <div key={v.id} className="glass rounded-2xl p-4 glow">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-semibold text-slate-800">{v.name}</span>
+                {isZr
+                  ? <span className="pill text-xs" style={{background:'rgba(99,102,241,0.15)',color:'#818cf8'}}>📅 {(v.tage||[]).length} Tage</span>
+                  : <span className="text-slate-500 text-xs">{(v.slots||[]).length} Slots</span>}
+                {onChange && <div className="ml-auto flex gap-1">
+                  <button onClick={()=>openEdit(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={12}/></button>
+                  <button onClick={()=>del(v)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>
+                </div>}
+              </div>
+              {isZr ? (
+                <div className="space-y-1">
+                  {(v.tage||[]).map(tag=>(
+                    <div key={tag.id} className="flex gap-2 items-start">
+                      <span className="text-slate-500 text-xs w-12 pt-0.5 flex-shrink-0">{tag.label}</span>
+                      <div className="flex flex-wrap gap-1">{(tag.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>;})}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {(v.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>; })}
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {v.slots.map(s => {
-                const g = ma.gruppen.find(x=>x.id===s.gruppeId);
-                const d = (g?.dienste||[]).find(x=>x.id===s.dienstId);
-                return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>;
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {modal && (
-        <Modal title={modal==='add'?'Vorlage erstellen':'Vorlage bearbeiten'} onClose={() => setModal(null)} wide>
+        <Modal title={modal==='add'?'Vorlage erstellen':'Vorlage bearbeiten'} onClose={()=>setModal(null)} wide>
           <div className="space-y-4">
             <div>
               <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
-              <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}
                 placeholder="z. B. Sonntagsgottesdienst" className={"w-full "+INP} autoFocus/>
             </div>
+
+            {/* Art toggle */}
             <div>
-              <label className="text-slate-400 text-xs block mb-2">Slots</label>
-              <div className="space-y-2">
-                {form.slots.map(s => {
-                  const g = ma.gruppen.find(x=>x.id===s.gruppeId);
-                  return (
-                    <div key={s.id} className="flex gap-2 items-center">
-                      <select value={s.gruppeId} onChange={e=>{
-                          const g2=ma.gruppen.find(x=>x.id===e.target.value);
-                          updSlot(s.id,'gruppeId',e.target.value);
-                          if(g2?.dienste?.[0]) updSlot(s.id,'dienstId',g2.dienste[0].id);
-                        }} className={INP_SM+" flex-1"}>
-                        {ma.gruppen.map(g2=><option key={g2.id} value={g2.id}>{g2.name}</option>)}
-                      </select>
-                      <select value={s.dienstId} onChange={e=>updSlot(s.id,'dienstId',e.target.value)} className={INP_SM+" flex-1"}>
-                        <option value="">— Dienst —</option>
-                        {(g?.dienste||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
-                      <button type="button" onClick={() => updSlot(s.id,'doppelt',!s.doppelt)} title="Doppelt besetzen"
-                        className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${s.doppelt?'bg-amber-600/30 text-amber-400':'bg-black/5 text-slate-600'}`}>×2</button>
-                      <button type="button" onClick={() => remSlot(s.id)} className="text-slate-600 hover:text-red-400 transition-all"><SI p={IC.x} size={13}/></button>
-                    </div>
-                  );
-                })}
+              <label className="text-slate-400 text-xs block mb-1.5">Art</label>
+              <div className="flex gap-1.5">
+                {[['einzel','Einzel-Tag'],['zeitraum','Zeitraum / Mehrtägig']].map(([a,l])=>(
+                  <button key={a} type="button" onClick={()=>setForm(f=>({...f,art:a}))}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${form.art===a?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                    {l}
+                  </button>
+                ))}
               </div>
-              <button onClick={addSlot} disabled={ma.gruppen.length===0}
-                className="mt-2 flex items-center gap-1 text-slate-700 hover:text-slate-900 text-xs transition-all">
-                <SI p={IC.plus} size={12}/> Slot hinzufügen
-              </button>
             </div>
+
+            {/* Einzel slots */}
+            {form.art==='einzel' && (
+              <div>
+                <label className="text-slate-400 text-xs block mb-2">Slots</label>
+                <div className="space-y-2">
+                  {form.slots.map(s=><SlotRow key={s.id} s={s} onUpd={updSlot} onRem={remSlot}/>)}
+                </div>
+                <button onClick={addSlot} disabled={ma.gruppen.length===0} className="mt-2 flex items-center gap-1 text-slate-700 hover:text-slate-900 text-xs transition-all">
+                  <SI p={IC.plus} size={12}/> Slot hinzufügen
+                </button>
+              </div>
+            )}
+
+            {/* Zeitraum tage */}
+            {form.art==='zeitraum' && (
+              <div>
+                <label className="text-slate-400 text-xs block mb-2">Tage</label>
+                {/* Tab bar */}
+                <div className="flex gap-1 flex-wrap mb-3">
+                  {form.tage.map((tag,i)=>(
+                    <button key={tag.id} type="button" onClick={()=>setSelTag(i)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${selTag===i?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+                      {tag.label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={addTag} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-black/5 text-slate-500 hover:text-slate-700 transition-all">
+                    <SI p={IC.plus} size={11}/>
+                  </button>
+                </div>
+                {/* Selected tag editor */}
+                {form.tage[selTag] && (
+                  <div className="space-y-2 pl-1 border-l-2" style={{borderColor:'rgba(99,102,241,0.3)'}}>
+                    <div className="flex gap-2 items-center">
+                      <input value={form.tage[selTag].label} onChange={e=>updTagLabel(selTag,e.target.value)}
+                        className={INP_SM+" flex-1"} placeholder="Tag-Bezeichnung"/>
+                      {form.tage.length>1 && <button type="button" onClick={()=>remTag(selTag)} className="text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={12}/></button>}
+                    </div>
+                    <div className="space-y-2">
+                      {(form.tage[selTag].slots||[]).map(s=><SlotRow key={s.id} s={s} onUpd={updTagSlot} onRem={remTagSlot}/>)}
+                    </div>
+                    <button onClick={addTagSlot} disabled={ma.gruppen.length===0} className="flex items-center gap-1 text-slate-700 hover:text-slate-900 text-xs transition-all">
+                      <SI p={IC.plus} size={12}/> Slot hinzufügen
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-2 pt-1">
               <button onClick={save} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={()=>setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -954,7 +1022,20 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const createSchicht = () => {
     if (!createForm.datum) return;
     const vorlage = ma.vorlagen.find(v=>v.id===createForm.vorlageId);
-    const slots = vorlage ? vorlage.slots.map(s=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:s.doppelt||false, personId:'', personId2:'' })) : [];
+    if (vorlage?.art==='zeitraum' && (vorlage.tage||[]).length>0) {
+      const newSchichten = vorlage.tage.map((tag,i)=>{
+        const d = new Date(createForm.datum+'T00:00:00'); d.setDate(d.getDate()+i);
+        const datum = d.toISOString().slice(0,10);
+        const titel = [createForm.titel.trim(), tag.label].filter(Boolean).join(' – ');
+        const slots = (tag.slots||[]).map(s=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:s.doppelt||false,personId:'',personId2:''}));
+        return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false};
+      });
+      onChange(m=>({...m,schichten:[...m.schichten,...newSchichten]}));
+      if(newSchichten[0]){setSelSchichtId(newSchichten[0].id);setView('detail');}
+      setModal(null); toast(`${newSchichten.length} Schichten erstellt ✓`);
+      return;
+    }
+    const slots = vorlage ? (vorlage.slots||[]).map(s=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:s.doppelt||false, personId:'', personId2:'' })) : [];
     const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false };
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
@@ -1168,7 +1249,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         <Modal title="Neue Schicht erstellen" onClose={() => setModal(null)}>
           <div className="space-y-4">
             <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Datum *</label>
+              <label className="text-slate-400 text-xs block mb-1.5">{ma.vorlagen.find(v=>v.id===createForm.vorlageId)?.art==='zeitraum'?'Start-Datum *':'Datum *'}</label>
               <input type="date" value={createForm.datum} onChange={e=>setCreateForm(p=>({...p,datum:e.target.value}))} className={"w-full "+INP} autoFocus/>
             </div>
             <div>
@@ -1177,15 +1258,22 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 placeholder="z. B. Sonntagsgottesdienst" className={"w-full "+INP}
                 onKeyDown={e=>e.key==='Enter'&&createSchicht()}/>
             </div>
-            {ma.vorlagen.length>0 && (
-              <div>
-                <label className="text-slate-400 text-xs block mb-1.5">Vorlage</label>
-                <select value={createForm.vorlageId} onChange={e=>setCreateForm(p=>({...p,vorlageId:e.target.value}))} className={"w-full "+INP}>
-                  <option value="">— Keine Vorlage (leere Schicht) —</option>
-                  {ma.vorlagen.map(v=><option key={v.id} value={v.id}>{v.name} ({v.slots.length} Slots)</option>)}
-                </select>
-              </div>
-            )}
+            {ma.vorlagen.length>0 && (() => {
+              const selVorlage = ma.vorlagen.find(v=>v.id===createForm.vorlageId);
+              const isZr = selVorlage?.art==='zeitraum';
+              return (
+                <div>
+                  <label className="text-slate-400 text-xs block mb-1.5">Vorlage</label>
+                  <select value={createForm.vorlageId} onChange={e=>setCreateForm(p=>({...p,vorlageId:e.target.value}))} className={"w-full "+INP}>
+                    <option value="">— Keine Vorlage (leere Schicht) —</option>
+                    {ma.vorlagen.map(v=><option key={v.id} value={v.id}>{v.art==='zeitraum'?'📅 ':''}{v.name}{v.art==='zeitraum'?` (${(v.tage||[]).length} Tage)`:`(${(v.slots||[]).length} Slots)`}</option>)}
+                  </select>
+                  {isZr && (
+                    <p className="text-indigo-400 text-xs mt-1.5">📅 Erstellt {(selVorlage.tage||[]).length} aufeinanderfolgende Schichten ab dem Start-Datum</p>
+                  )}
+                </div>
+              );
+            })()}
             <div className="flex gap-2 pt-1">
               <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Erstellen</button>
               <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
@@ -1936,7 +2024,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════════════════
-const LoginScreen = ({ onLogin }) => {
+const LoginScreen = ({ onLogin, ownerPin }) => {
   const [name,     setName]    = useState('');
   const [pin,      setPin]     = useState('');
   const [showPin,  setShowPin] = useState(false);
@@ -1959,7 +2047,7 @@ const LoginScreen = ({ onLogin }) => {
   const tryLogin = () => {
     const n = name.trim();
     if (!n||!pin) { setErr('Bitte Name und PIN eingeben'); return; }
-    if (n.toLowerCase()===OWNER_NAME.toLowerCase()&&pin===OWNER_PIN) {
+    if (n.toLowerCase()===OWNER_NAME.toLowerCase()&&pin===(ownerPin||OWNER_PIN)) {
       onLogin({id:'owner',name:OWNER_NAME,role:'owner',permissions:{edit:true,del:true,settings:true,profiles:true}});
       return;
     }
@@ -2046,6 +2134,15 @@ const App = () => {
     return localStorage.getItem(key) ? 'synced' : 'connecting';
   });
   const [toasts,    setToasts]    = useState([]);
+  const [ownerPin,  setOwnerPin]  = useState('');
+
+  useEffect(() => {
+    const unsub = db.collection('config').doc('auth').onSnapshot(
+      snap => { const p = snap.data()?.adminPin; if (p) setOwnerPin(p); },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
 
   const p           = perms(currentUser);
   const isAdmin     = p.settings;
@@ -2155,7 +2252,7 @@ const App = () => {
   // Merged view used by all child components
   const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[] };
 
-  if (currentUser === undefined) return <LoginScreen onLogin={login}/>;
+  if (currentUser === undefined) return <LoginScreen onLogin={login} ownerPin={ownerPin}/>;
 
   const TABS = [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
