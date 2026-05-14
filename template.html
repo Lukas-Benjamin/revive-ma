@@ -1103,12 +1103,14 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [selPlanId,    setSelPlanId]   = useState('all');
   const [planModal,    setPlanModal]   = useState(null);
   const [planForm,     setPlanForm]    = useState({ name:'' });
+  const [filterPerson, setFilterPerson]= useState('');
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => {
-    const list = selPlanId==='all' ? ma.schichten : ma.schichten.filter(s=>s.planId===selPlanId);
+    let list = selPlanId==='all' ? ma.schichten : ma.schichten.filter(s=>s.planId===selPlanId);
+    if (filterPerson) list = list.filter(s=>s.slots.some(sl=>sl.personId===filterPerson||sl.personId2===filterPerson));
     return [...list].sort((a,b)=>b.datum.localeCompare(a.datum));
-  }, [ma.schichten, selPlanId]);
+  }, [ma.schichten, selPlanId, filterPerson]);
   const myPerson   = useMemo(() => currentUser ? ma.personen.find(p=>p.name===currentUser.name)||null : null, [ma.personen, currentUser]);
   const myGroupIds = useMemo(() => myPerson ? (myPerson.gruppenIds||(myPerson.gruppeId?[myPerson.gruppeId]:[])) : [], [myPerson]);
 
@@ -1246,9 +1248,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       });
       const pick = (excl) => {
         const ok = p => !excl.has(p.id) && !conflictsWith(p.id, usedNow);
-        const wunsch = eligible.filter(p=>{ const w=(selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id); return w?.art==='wunschdienst'&&ok(p); });
-        const rest   = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id));
-        const pool   = [...wunsch, ...rest.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0))];
+        const praefs = ma.praeferenzen||[];
+        const wunsch    = eligible.filter(p=>{ const w=(selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id); return w?.art==='wunschdienst'&&ok(p); });
+        const bevorzugt = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='bevorzugt'));
+        const neutral   = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='vermeidet'));
+        const vermeidet = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!neutral.find(x=>x.id===p.id));
+        const byCount = (a,b)=>(counts[a.id]||0)-(counts[b.id]||0);
+        const pool = [...wunsch,...bevorzugt.sort(byCount),...neutral.sort(byCount),...vermeidet.sort(byCount)];
         if (!pool.length) return '';
         const p = pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
       };
@@ -1278,9 +1284,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         });
         const pick = excl=>{
           const ok=p=>!excl.has(p.id)&&!conflictsWith(p.id,usedNow);
+          const praefs=ma.praeferenzen||[];
           const wunsch=eligible.filter(p=>{const w=(s.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);return w?.art==='wunschdienst'&&ok(p);});
-          const rest=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id));
-          const pool=[...wunsch,...rest.sort((a,b)=>(counts[a.id]||0)-(counts[b.id]||0))];
+          const bevorzugt=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='bevorzugt'));
+          const neutral=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='vermeidet'));
+          const vermeidet=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!neutral.find(x=>x.id===p.id));
+          const byCount=(a,b)=>(counts[a.id]||0)-(counts[b.id]||0);
+          const pool=[...wunsch,...bevorzugt.sort(byCount),...neutral.sort(byCount),...vermeidet.sort(byCount)];
           if(!pool.length) return '';
           const p=pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
         };
@@ -1328,6 +1338,40 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           </button>}
         </div>
       </div>
+
+      {/* Person-Filter */}
+      {ma.personen.length>0 && (
+        <select value={filterPerson} onChange={e=>setFilterPerson(e.target.value)}
+          className="w-full bg-black/5 border border-black/10 rounded-2xl px-4 py-2.5 text-sm text-slate-700 outline-none">
+          <option value="">Alle Personen</option>
+          {ma.personen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      )}
+
+      {/* Globale Tausch-Anfragen */}
+      {onChange && (ma.tauschAnfragen||[]).length>0 && (
+        <div className="glass rounded-2xl p-4 space-y-2.5" style={{borderLeft:'3px solid rgba(251,146,60,0.6)'}}>
+          <div className="text-xs font-semibold uppercase tracking-wider" style={{color:'#f97316'}}>🔄 {(ma.tauschAnfragen||[]).length} offene Tausch-Anfrage{(ma.tauschAnfragen||[]).length!==1?'n':''}</div>
+          {(ma.tauschAnfragen||[]).slice(0,4).map(r=>{
+            const person=ma.personen.find(p=>p.id===r.personId);
+            const schicht=ma.schichten.find(s=>s.id===r.schichtId);
+            const slot=schicht?.slots.find(sl=>sl.id===r.slotId);
+            const g=ma.gruppen.find(x=>x.id===slot?.gruppeId);
+            const d=(g?.dienste||[]).find(x=>x.id===slot?.dienstId);
+            return (
+              <div key={r.id} onClick={()=>{setSelSchichtId(r.schichtId);setView('detail');}}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-all">
+                <Avatar name={person?.name||'?'} farbe={person?.farbe||'#f97316'} size={24}/>
+                <div className="flex-1 min-w-0 text-xs">
+                  <span className="font-semibold text-slate-700">{person?.name||'?'}</span>
+                  <span className="text-slate-500"> · {d?.name||'?'} · {schicht?fmtDe(schicht.datum):''}</span>
+                </div>
+                <SI p={IC.chevronRight} size={12} className="text-slate-400 flex-shrink-0"/>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Plan switcher */}
       {(onChange || (ma.plaene||[]).length>0) && (
@@ -1518,7 +1562,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           const p1 = ma.personen.find(x=>x.id===sl.personId);
           const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
           const col = g?.farbe||'#8b5cf6';
-          const wCount = (selSchicht.wuensche||[]).filter(w=>w.slotId===sl.id).length;
+          const slotWishes = (selSchicht.wuensche||[]).filter(w=>w.slotId===sl.id);
+          const wCount = slotWishes.length;
+          const wJa  = slotWishes.filter(w=>w.art==='wunschdienst').length;
+          const wNein= slotWishes.filter(w=>w.art==='wunschfrei').length;
 
           return (
             <div key={sl.id} className="glass rounded-2xl p-3">
@@ -1528,7 +1575,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <span className="text-slate-700 text-xs">›</span>
                 <span className="text-xs font-semibold text-slate-700">{d?.name||'?'}</span>
                 {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Doppeldienst</span>}
-                {wCount>0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
+                {wJa>0  && <span className="pill text-xs" style={{background:'rgba(16,185,129,0.1)',color:'#10b981'}}>👍 {wJa}</span>}
+                {wNein>0 && <span className="pill text-xs" style={{background:'rgba(239,68,68,0.08)',color:'#ef4444'}}>👎 {wNein}</span>}
+                {wCount>0&&wJa===0&&wNein===0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
                 {onChange && <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>}
               </div>
               <div className="flex gap-2 flex-wrap items-center">
@@ -1794,16 +1843,17 @@ const StatistikView = ({ ma }) => {
     return ma.personen
       .filter(p => filterGrp==='all' || (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(filterGrp))
       .map(p => {
-        let total = 0;
+        let total = 0, lastDate = '';
         const byDienst = {};
         filtSchichten.forEach(s => s.slots.forEach(sl => {
           if (sl.personId!==p.id) return;
           total++;
+          if (!lastDate || s.datum > lastDate) lastDate = s.datum;
           const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
           const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
           byDienst[d?.name||'?'] = (byDienst[d?.name||'?']||0)+1;
         }));
-        return { p, total, byDienst };
+        return { p, total, byDienst, lastDate };
       }).sort((a,b) => sortMode==='alpha' ? a.p.name.localeCompare(b.p.name) : sortMode==='asc' ? a.total-b.total : b.total-a.total);
   }, [ma, filtSchichten, filterGrp, sortMode]);
 
@@ -1877,7 +1927,7 @@ const StatistikView = ({ ma }) => {
           <div className="glass rounded-2xl py-16 text-center text-slate-600">Noch keine Daten</div>
         ) : (
           <div className="space-y-3">
-            {stats.map(({ p, total, byDienst }) => {
+            {stats.map(({ p, total, byDienst, lastDate }) => {
               const gruppen2 = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
               const pct = Math.round((total/maxVal)*100);
               return (
@@ -1887,6 +1937,7 @@ const StatistikView = ({ ma }) => {
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
                       {gruppen2.length>0&&<div className="flex gap-1.5 flex-wrap">{gruppen2.map(g=><span key={g.id} className="text-xs" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+                      {lastDate&&<div className="text-slate-400 text-xs mt-0.5">Letzter Einsatz: {fmtDe(lastDate)}</div>}
                     </div>
                     <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
                   </div>
