@@ -151,7 +151,7 @@ const ToastContainer = ({ toasts }) => (
 );
 
 // ─── User & Permission System ─────────────────────────────────────────────────
-const OWNER_NAME  = 'Lukas Reuter';
+const OWNER_NAME  = 'Admin';
 const OWNER_PIN   = '0207';
 const ROLE_LABELS = { owner:'Admin', admin:'Co-Admin', editor:'Bearbeiter', viewer:'Betrachter' };
 const ROLE_OPTIONS = ['admin','editor','viewer'];
@@ -237,7 +237,7 @@ const INP_SM = "bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-
 // ═══════════════════════════════════════════════════════════════════════════════
 const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [modal,      setModal]      = useState(null);
-  const [saved,      setSaved]      = useState(false);
+  const [saved,      setSaved]      = useState(false); // unused, kept for compat
   const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{} });
   const [showPin,    setShowPin]    = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);
@@ -310,9 +310,8 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
       }
     }
 
-    // 3. Show success state, then auto-close
-    setSaved(true);
-    setTimeout(() => { setModal(null); setSaved(false); }, 1600);
+    toast('Gespeichert ✓');
+    setModal(null);
   };
 
   const del = async p => {
@@ -476,15 +475,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
       {modal && (
         <Modal title={modal==='add'?'Person hinzufügen':'Person bearbeiten'} onClose={() => setModal(null)}>
-          {saved ? (
-            <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{background:'rgba(16,185,129,0.1)'}}>
-                <SI p={IC.check} size={24} stroke={2.5} style={{color:'#10b981'}}/>
-              </div>
-              <p className="text-slate-700 font-semibold text-sm">Gespeichert!</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
+          <div className="space-y-4">
               <div>
                 <label className="text-slate-400 text-xs block mb-1.5">Name *</label>
                 <input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="Vorname Nachname"
@@ -634,7 +625,6 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                 <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
               </div>
             </div>
-          )}
         </Modal>
       )}
     </div>
@@ -1593,6 +1583,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
 // STATISTIK VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const StatistikView = ({ ma }) => {
+  const [tab, setTab] = useState('personen');
+
   const stats = useMemo(() => {
     return ma.personen.map(p => {
       let total = 0;
@@ -1610,45 +1602,128 @@ const StatistikView = ({ ma }) => {
     }).sort((a,b) => b.total-a.total);
   }, [ma]);
 
+  const teamStats = useMemo(() => {
+    return ma.gruppen.map(g => {
+      let totalSlots = 0, filledSlots = 0;
+      const byDienst = {};
+      ma.schichten.forEach(s => s.slots.forEach(sl => {
+        if (sl.gruppeId !== g.id) return;
+        totalSlots++;
+        if (sl.personId) filledSlots++;
+        const d = (g.dienste||[]).find(x=>x.id===sl.dienstId);
+        const key = d?.name||'?';
+        if (!byDienst[key]) byDienst[key] = { total:0, filled:0 };
+        byDienst[key].total++;
+        if (sl.personId) byDienst[key].filled++;
+      }));
+      const members = ma.personen.filter(p => (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(g.id));
+      return { g, totalSlots, filledSlots, byDienst, members };
+    }).filter(x => x.totalSlots > 0 || x.members.length > 0);
+  }, [ma]);
+
   const maxVal = stats.length ? Math.max(...stats.map(s=>s.total), 1) : 1;
 
   return (
     <div className="space-y-5 up">
       <div>
         <h1 className="text-xl font-bold grad">Statistik</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Einsätze pro Mitarbeiter</p>
+        <p className="text-slate-500 text-sm mt-0.5">Einsätze & Team-Auslastung</p>
       </div>
-      {stats.length===0 ? (
-        <div className="glass rounded-2xl py-16 text-center text-slate-600">Noch keine Daten</div>
-      ) : (
-        <div className="space-y-3">
-          {stats.map(({ p, total, byDienst }) => {
-            const gruppen2 = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
-            const pct = Math.round((total/maxVal)*100);
-            return (
-              <div key={p.id} className="glass rounded-2xl p-4 glow">
-                <div className="flex items-center gap-3 mb-2">
-                  <Avatar name={p.name} farbe={p.farbe} size={36}/>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
-                    {gruppen2.length>0&&<div className="flex gap-1.5 flex-wrap">{gruppen2.map(g=><span key={g.id} className="text-xs" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+
+      <div className="flex gap-2">
+        {[['personen','Mitarbeiter'],['teams','Teams']].map(([id,label])=>(
+          <button key={id} onClick={()=>setTab(id)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${tab===id?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab==='personen' && (
+        stats.length===0 ? (
+          <div className="glass rounded-2xl py-16 text-center text-slate-600">Noch keine Daten</div>
+        ) : (
+          <div className="space-y-3">
+            {stats.map(({ p, total, byDienst }) => {
+              const gruppen2 = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
+              const pct = Math.round((total/maxVal)*100);
+              return (
+                <div key={p.id} className="glass rounded-2xl p-4 glow">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Avatar name={p.name} farbe={p.farbe} size={36}/>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
+                      {gruppen2.length>0&&<div className="flex gap-1.5 flex-wrap">{gruppen2.map(g=><span key={g.id} className="text-xs" style={{color:g.farbe}}>{g.name}</span>)}</div>}
+                    </div>
+                    <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
                   </div>
-                  <div className="text-2xl font-black" style={{color:p.farbe}}>{total}</div>
-                </div>
-                <div className="h-1.5 rounded-full bg-black/5 overflow-hidden mb-2">
-                  <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:p.farbe}}/>
-                </div>
-                {Object.keys(byDienst).length>0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {Object.entries(byDienst).map(([k,v])=>(
-                      <span key={k} className="pill" style={{background:'rgba(0,0,0,0.06)',color:'#94a3b8'}}>{k}: {v}</span>
-                    ))}
+                  <div className="h-1.5 rounded-full bg-black/5 overflow-hidden mb-2">
+                    <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:p.farbe}}/>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {Object.keys(byDienst).length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(byDienst).map(([k,v])=>(
+                        <span key={k} className="pill" style={{background:'rgba(0,0,0,0.06)',color:'#94a3b8'}}>{k}: {v}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {tab==='teams' && (
+        teamStats.length===0 ? (
+          <div className="glass rounded-2xl py-16 text-center text-slate-600">Noch keine Daten</div>
+        ) : (
+          <div className="space-y-3">
+            {teamStats.map(({ g, totalSlots, filledSlots, byDienst, members }) => {
+              const pct = totalSlots > 0 ? Math.round((filledSlots/totalSlots)*100) : 0;
+              const fillColor = pct>=80 ? '#10b981' : pct>=50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={g.id} className="glass rounded-2xl p-4 glow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{background:g.farbe+'22'}}>
+                      <span className="font-black text-sm" style={{color:g.farbe}}>{g.name.slice(0,2)}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-800 text-sm">{g.name}</div>
+                      <div className="text-slate-500 text-xs">{members.length} Mitglieder</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-black" style={{color:fillColor}}>{pct}%</div>
+                      <div className="text-slate-400 text-xs">{filledSlots}/{totalSlots} Slots</div>
+                    </div>
+                  </div>
+                  {totalSlots > 0 && (
+                    <div className="h-1.5 rounded-full bg-black/5 overflow-hidden mb-2">
+                      <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:fillColor}}/>
+                    </div>
+                  )}
+                  {members.length>0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {members.map(p=>(
+                        <div key={p.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" style={{background:p.farbe+'18',color:p.farbe}}>
+                          <Avatar name={p.name} farbe={p.farbe} size={14}/>
+                          {p.name.split(' ')[0]}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Object.keys(byDienst).length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(byDienst).map(([k,v])=>(
+                        <span key={k} className="pill" style={{background:'rgba(0,0,0,0.06)',color:'#94a3b8'}}>{k}: {v.filled}/{v.total}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );
