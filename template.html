@@ -9,7 +9,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -19,16 +19,23 @@
     db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   </script>
   <script>
+    function showErr(msg) {
+      document.getElementById('root').innerHTML =
+        '<pre style="padding:20px;color:#dc2626;font-family:monospace;font-size:12px;white-space:pre-wrap;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin:24px">' + msg + '</pre>';
+    }
     window.addEventListener('error', function(e) {
-      var msg = e.message || 'Unbekannter Fehler';
-      var src = (e.filename||'') + ':' + e.lineno + ':' + e.colno;
-      document.body.innerHTML = '<pre style="padding:20px;color:red;font-size:13px;white-space:pre-wrap">' +
-        'FEHLER: ' + msg + '\nQuelle: ' + src + '\n\nStack:\n' + (e.error&&e.error.stack||'—') + '</pre>';
+      showErr('JS FEHLER: ' + (e.message||'?') + '\nDatei: ' + (e.filename||'?') + ':' + e.lineno + ':' + e.colno + '\nStack: ' + (e.error&&e.error.stack||'—'));
     });
     window.addEventListener('unhandledrejection', function(e) {
-      document.body.innerHTML = '<pre style="padding:20px;color:red;font-size:13px;white-space:pre-wrap">' +
-        'PROMISE REJECTED:\n' + (e.reason||e) + '</pre>';
+      showErr('PROMISE REJECTED:\n' + (e.reason||(e.reason&&e.reason.stack)||e));
     });
+    // Fallback: if root is still empty after 6s, Babel silently failed
+    setTimeout(function() {
+      var root = document.getElementById('root');
+      if (root && root.innerHTML.trim() === '') {
+        showErr('Babel hat die App nicht kompiliert (stille Fehler).\nBitte öffne die Browser-Konsole (F12) und schau nach Fehlern unter "Console".');
+      }
+    }, 6000);
   </script>
   <style>
     * { box-sizing: border-box; }
