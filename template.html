@@ -18,6 +18,18 @@
     const db = firebase.firestore();
     db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   </script>
+  <script>
+    window.addEventListener('error', function(e) {
+      var msg = e.message || 'Unbekannter Fehler';
+      var src = (e.filename||'') + ':' + e.lineno + ':' + e.colno;
+      document.body.innerHTML = '<pre style="padding:20px;color:red;font-size:13px;white-space:pre-wrap">' +
+        'FEHLER: ' + msg + '\nQuelle: ' + src + '\n\nStack:\n' + (e.error&&e.error.stack||'—') + '</pre>';
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      document.body.innerHTML = '<pre style="padding:20px;color:red;font-size:13px;white-space:pre-wrap">' +
+        'PROMISE REJECTED:\n' + (e.reason||e) + '</pre>';
+    });
+  </script>
   <style>
     * { box-sizing: border-box; }
     ::-webkit-scrollbar { width: 5px; }
