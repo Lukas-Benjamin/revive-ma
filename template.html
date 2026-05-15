@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>REVIVE Mitarbeiter</title>
+  <title>K21 Dienstplan</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -17,13 +17,6 @@
     firebase.initializeApp("__FIREBASE_CONFIG__");
     const db = firebase.firestore();
     db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
-  </script>
-  <script>
-    window.addEventListener('error', function(e) {
-      document.getElementById('root').innerHTML =
-        '<div style="padding:24px;font-family:monospace;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin:24px">' +
-        '<b>JS Error:</b><br>' + e.message + '<br><small>' + (e.filename||'') + ':' + e.lineno + '</small></div>';
-    });
   </script>
   <style>
     * { box-sizing: border-box; }
@@ -2896,7 +2889,7 @@ const App = () => {
               <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:9,color:'#ffffff',letterSpacing:'-0.5px'}}>K21</span>
             </div>
             <div className="hidden sm:block">
-              <div style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>TEAM</div>
+              <div style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>DIENSTPLAN</div>
             </div>
           </div>
 
