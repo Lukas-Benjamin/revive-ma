@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
+const babel   = require('@babel/core');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -15,9 +16,35 @@ const firebaseConfig = JSON.stringify({
   appId:             process.env.FIREBASE_APP_ID,
 });
 
-app.get('/', (req, res) => {
+// Pre-compile the JSX template once at startup
+let compiledHtml;
+try {
   const tmpl = fs.readFileSync(path.join(__dirname, 'template.html'), 'utf8');
-  const html = tmpl.replace('"__FIREBASE_CONFIG__"', firebaseConfig);
+  // Extract JSX block and compile server-side
+  const compiled = tmpl.replace(
+    /<script type="text\/babel">([\s\S]*?)<\/script>/,
+    (_, jsx) => {
+      const result = babel.transformSync(jsx, {
+        presets: [
+          ['@babel/preset-env', { targets: { browsers: ['last 2 years'] }, modules: false }],
+          ['@babel/preset-react', { runtime: 'classic' }],
+        ],
+        compact: false,
+      });
+      return `<script>\n${result.code}\n</script>`;
+    }
+  );
+  // Remove Babel standalone CDN tag (no longer needed)
+  compiledHtml = compiled.replace(/<script[^>]*babel[^>]*><\/script>\n?/g, '');
+  console.log('JSX compiled successfully at startup');
+} catch (err) {
+  console.error('Babel compilation error:', err.message);
+  // Fallback: serve as-is with Babel standalone
+  compiledHtml = fs.readFileSync(path.join(__dirname, 'template.html'), 'utf8');
+}
+
+app.get('/', (req, res) => {
+  const html = compiledHtml.replace('"__FIREBASE_CONFIG__"', firebaseConfig);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 });
