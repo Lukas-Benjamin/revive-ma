@@ -18,6 +18,13 @@
     const db = firebase.firestore();
     db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   </script>
+  <script>
+    window.addEventListener('error', function(e) {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:24px;font-family:monospace;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin:24px">' +
+        '<b>JS Error:</b><br>' + e.message + '<br><small>' + (e.filename||'') + ':' + e.lineno + '</small></div>';
+    });
+  </script>
   <style>
     * { box-sizing: border-box; }
     ::-webkit-scrollbar { width: 5px; }
