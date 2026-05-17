@@ -363,12 +363,10 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
             {visPersonen.map(p => {
             const gruppen = (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).map(gid=>ma.gruppen.find(g=>g.id===gid)).filter(Boolean);
             const hasLogin = !!findLogin(p.name);
+            const praefs = (ma.praeferenzen||[]).filter(pf=>pf.personId===p.id);
+            const allDiensteMap = {};
+            ma.gruppen.forEach(g=>(g.dienste||[]).forEach(d=>{allDiensteMap[d.id]=d;}));
             return (
-              {(() => {
-                const praefs = (ma.praeferenzen||[]).filter(pf=>pf.personId===p.id);
-                const allDiensteMap = {};
-                ma.gruppen.forEach(g=>(g.dienste||[]).forEach(d=>{allDiensteMap[d.id]=d;}));
-                return (
                 <div key={p.id} className="glass glass-hover rounded-2xl p-4">
                   <div className="flex items-center gap-3">
                     <Avatar name={p.name} farbe={p.farbe}/>
@@ -399,8 +397,6 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
                     </div>
                   )}
                 </div>
-                );
-              })()}
             );
           })}
           </div>
