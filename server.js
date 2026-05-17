@@ -26,10 +26,14 @@ try {
     (_, jsx) => {
       const result = babel.transformSync(jsx, {
         presets: [
-          ['@babel/preset-env', { targets: { browsers: ['last 2 years'] }, modules: false }],
           ['@babel/preset-react', { runtime: 'classic' }],
         ],
+        plugins: [
+          '@babel/plugin-transform-optional-chaining',
+          '@babel/plugin-transform-nullish-coalescing-operator',
+        ],
         compact: false,
+        sourceType: 'script',
       });
       return `<script>\n${result.code}\n</script>`;
     }
