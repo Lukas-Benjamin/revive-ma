@@ -112,16 +112,63 @@ const buildPlanText = (ma, single) => {
   const schichten = single ? [single] : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum));
   return schichten.map(s => {
     const header = `📅 *${s.titel||fmtDe(s.datum)}* — ${fmtDe(s.datum)}`;
-    const lines = s.slots.map(sl => {
+    // Group slots by gruppeId, sort groups by name
+    const gruppenMap = {};
+    s.slots.forEach(sl => {
+      if (!gruppenMap[sl.gruppeId]) gruppenMap[sl.gruppeId] = [];
+      gruppenMap[sl.gruppeId].push(sl);
+    });
+    const sortedGruppen = Object.keys(gruppenMap).sort((a,b) => {
+      const ga = ma.gruppen.find(x=>x.id===a);
+      const gb = ma.gruppen.find(x=>x.id===b);
+      return (ga?.name||'').localeCompare(gb?.name||'');
+    });
+    const gruppenLines = sortedGruppen.map(gid => {
+      const g = ma.gruppen.find(x=>x.id===gid);
+      const slotLines = gruppenMap[gid].map(sl => {
+        const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+        const p1 = ma.personen.find(x=>x.id===sl.personId);
+        const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
+        const name1 = p1 ? p1.name + (sl.doppelt ? ' (Doppeldienst)' : '') : '— (offen)';
+        const names = p2 ? `${name1} & ${p2.name}` : name1;
+        return `  • ${d?.name||'?'}: ${names}`;
+      });
+      return [`👥 *${g?.name||'?'}*`, ...slotLines].join('\n');
+    });
+    return [header, ...gruppenLines].join('\n');
+  }).join('\n\n');
+};
+
+// ─── iCal Export ──────────────────────────────────────────────────────────────
+const exportIcal = (ma, single) => {
+  const schichten = single ? [single] : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum));
+  const fmtIcalDate = d => d.replace(/-/g,'');
+  const nextDay = d => { const dt=new Date(d+'T00:00:00'); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10).replace(/-/g,''); };
+  const vevents = schichten.map(s => {
+    const desc = s.slots.map(sl => {
       const g  = ma.gruppen.find(x=>x.id===sl.gruppeId);
       const d  = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
       const p1 = ma.personen.find(x=>x.id===sl.personId);
       const p2 = sl.doppelt ? ma.personen.find(x=>x.id===sl.personId2) : null;
-      const names = [p1?.name, p2?.name].filter(Boolean).join(' & ') || '—';
-      return `• ${d?.name||'?'}: ${names}`;
-    });
-    return [header, ...lines].join('\n');
-  }).join('\n\n');
+      const names = [p1?.name, p2?.name].filter(Boolean).join(' & ') || '(offen)';
+      return `${g?.name||'?'}: ${names} (${d?.name||'?'})`;
+    }).join('\\n');
+    return [
+      'BEGIN:VEVENT',
+      `UID:${s.id}@k21`,
+      `DTSTART;VALUE=DATE:${fmtIcalDate(s.datum)}`,
+      `DTEND;VALUE=DATE:${nextDay(s.datum)}`,
+      `SUMMARY:${s.titel||'Dienstplan'}`,
+      `DESCRIPTION:${desc}`,
+      'END:VEVENT',
+    ].join('\r\n');
+  }).join('\r\n');
+  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//K21 Dienstplan//DE',vevents,'END:VCALENDAR'].join('\r\n');
+  const blob = new Blob([ics], {type:'text/calendar;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `dienstplan-${single?single.datum:'gesamt'}.ics`; a.click();
+  URL.revokeObjectURL(url);
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
@@ -1220,6 +1267,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [calYM,        setCalYM]       = useState(() => { const n=new Date(); return {y:n.getFullYear(),m:n.getMonth()}; });
   const [dupModal,     setDupModal]    = useState(null); // schicht to duplicate
   const [dupDate,      setDupDate]     = useState('');
+  const [recur,        setRecur]       = useState({ enabled:false, type:'weekly', until:'' });
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => {
@@ -1270,6 +1318,44 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     onChange(m => ({ ...m, schichten: m.schichten.map(s => s.id===id ? (typeof updater==='function'?updater(s):{...s,...updater}) : s) }));
   };
 
+  const generateRecurring = (baseSchicht) => {
+    const { type, until } = recur;
+    if (!until || !baseSchicht.datum) return 0;
+    const stepDays = type==='weekly' ? 7 : type==='biweekly' ? 14 : null;
+    const dates = [];
+    const start = new Date(baseSchicht.datum+'T00:00:00');
+    const untilDate = new Date(until+'T00:00:00');
+    if (stepDays) {
+      let cur = new Date(start); cur.setDate(cur.getDate() + stepDays);
+      while (cur <= untilDate) {
+        dates.push(cur.toISOString().slice(0,10));
+        cur.setDate(cur.getDate() + stepDays);
+      }
+    } else {
+      // monthly
+      let y = start.getFullYear(), m = start.getMonth(), day = start.getDate();
+      while (true) {
+        m++; if (m>11){m=0;y++;}
+        const candidate = new Date(y, m, day);
+        if (candidate > untilDate) break;
+        dates.push(candidate.toISOString().slice(0,10));
+      }
+    }
+    if (!dates.length) return 0;
+    const copies = dates.map(datum => ({
+      id: genId(),
+      datum,
+      titel: baseSchicht.titel,
+      slots: baseSchicht.slots.map(sl=>({...sl, id:genId(), personId:'', personId2:''})),
+      wuensche: [],
+      veroeffentlicht: false,
+      planId: baseSchicht.planId||'',
+      recurring: { type, until },
+    }));
+    onChange(m=>({...m, schichten:[...m.schichten,...copies]}));
+    return copies.length;
+  };
+
   const createSchicht = () => {
     if (!createForm.datum) return;
     const vorlage = ma.vorlagen.find(v=>v.id===createForm.vorlageId);
@@ -1288,7 +1374,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       });
       onChange(m=>({...m,schichten:[...m.schichten,...newSchichten]}));
       if(newSchichten[0]){setSelSchichtId(newSchichten[0].id);setView('detail');}
-      setModal(null); toast(`${newSchichten.length} Schichten erstellt ✓`);
+      setModal(null); setRecur({enabled:false,type:'weekly',until:''}); toast(`${newSchichten.length} Schichten erstellt ✓`);
       return;
     }
     const slots = vorlage ? (vorlage.slots||[]).flatMap(s=>{
@@ -1297,10 +1383,17 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       const cnt = d2?.count||1;
       return Array.from({length:cnt},()=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:false, personId:'', personId2:'' }));
     }) : [];
-    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId };
+    const recurringMeta = recur.enabled && recur.until ? { type:recur.type, until:recur.until } : undefined;
+    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId, ...(recurringMeta?{recurring:recurringMeta}:{}) };
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
-    toast('Schicht erstellt');
+    if (recur.enabled && recur.until) {
+      const count = generateRecurring(neu);
+      toast(count>0 ? `${count+1} Schichten generiert ✓` : 'Schicht erstellt');
+    } else {
+      toast('Schicht erstellt');
+    }
+    setRecur({ enabled:false, type:'weekly', until:'' });
   };
 
   const dupSchicht = () => {
@@ -1322,7 +1415,11 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   };
 
   const deleteSchicht = id => {
-    onChange(m => ({ ...m, schichten:m.schichten.filter(s=>s.id!==id) }));
+    onChange(m => ({
+      ...m,
+      schichten: m.schichten.filter(s=>s.id!==id),
+      tauschAnfragen: (m.tauschAnfragen||[]).filter(r=>r.schichtId!==id),
+    }));
     setView('list'); setSelSchichtId(null);
     toast('Schicht gelöscht','warn');
   };
@@ -1726,9 +1823,36 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 </div>
               );
             })()}
+            <div style={{borderTop:'1px solid rgba(0,0,0,0.07)'}} className="pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-slate-500 text-xs font-semibold">Wiederholen</label>
+                <button type="button"
+                  className={`toggle ${recur.enabled?'on':''}`}
+                  style={{background:recur.enabled?'#0f172a':'rgba(0,0,0,0.15)'}}
+                  onClick={()=>setRecur(r=>({...r,enabled:!r.enabled}))}/>
+              </div>
+              {recur.enabled && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    {[['weekly','Wöchentlich'],['biweekly','2-wöchentlich'],['monthly','Monatlich']].map(([v,l])=>(
+                      <button key={v} type="button" onClick={()=>setRecur(r=>({...r,type:v}))}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${recur.type===v?'bg-slate-900 text-white':'bg-black/5 text-slate-600 hover:bg-black/8'}`}>{l}</button>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-xs block mb-1">Bis Datum</label>
+                    <input type="date" value={recur.until} onChange={e=>setRecur(r=>({...r,until:e.target.value}))}
+                      className={"w-full "+INP} min={createForm.datum}/>
+                  </div>
+                  {recur.until && <p className="text-indigo-400 text-xs">Erstellt Schichten bis {fmtDe(recur.until)}</p>}
+                </div>
+              )}
+            </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Erstellen</button>
-              <button onClick={() => setModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+              <button onClick={createSchicht} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>
+                {recur.enabled&&recur.until?'Erstellen & Generieren':'Erstellen'}
+              </button>
+              <button onClick={() => { setModal(null); setRecur({enabled:false,type:'weekly',until:''}); }} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
           </div>
         </Modal>
@@ -1953,6 +2077,16 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const eligible = ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(selSlot.gruppeId));
         const cur = selSlot.isSecond ? selSlot.personId2 : selSlot.personId;
         const schichtDatum = selSchicht.datum;
+        // Workload: count slots this month per person (for admins/editors with canEdit)
+        const canShowWorkload = !!onChange;
+        const monthStr = schichtDatum ? schichtDatum.slice(0,7) : '';
+        const monthCounts = {};
+        if (canShowWorkload && monthStr) {
+          ma.schichten.filter(s=>s.datum.startsWith(monthStr)).forEach(s => s.slots.forEach(sl => {
+            if (sl.personId) monthCounts[sl.personId] = (monthCounts[sl.personId]||0)+1;
+            if (sl.personId2) monthCounts[sl.personId2] = (monthCounts[sl.personId2]||0)+1;
+          }));
+        }
         return (
           <Modal title={`Zuweisen: ${d?.name||'?'}`} onClose={() => setModal(null)}>
             <div className="space-y-1.5">
@@ -1961,6 +2095,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 const sel = cur===p.id;
                 const wish = (selSchicht.wuensche||[]).find(w=>w.personId===p.id&&w.slotId===selSlot.id);
                 const isAbsent = (ma.abwesenheiten||[]).some(a => a.personId===p.id && schichtDatum>=a.from && schichtDatum<=(a.to||a.from));
+                const wl = canShowWorkload ? (monthCounts[p.id]||0) : 0;
+                const wlDot = canShowWorkload && wl>=5 ? { color:'#ef4444', label:`${wl} Dienste – hohe Auslastung` }
+                            : canShowWorkload && wl>=3 ? { color:'#f97316', label:`${wl} Dienste diesen Monat` }
+                            : null;
                 return (
                   <button key={p.id} onClick={() => assignPerson(selSlot.id,p.id,selSlot.isSecond)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
@@ -1970,8 +2108,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-sm" style={{color:sel?p.farbe:'#e2e8f0'}}>{p.name}</span>
                         {isAbsent && <span title="Abwesenheit eingetragen" className="text-xs font-bold text-amber-400">⚠ abwesend</span>}
+                        {wlDot && <span title={wlDot.label} className="dot flex-shrink-0" style={{background:wlDot.color,width:8,height:8}}/>}
                       </div>
                       {wish&&<div className="text-xs" style={{color:wish.art==='wunschdienst'?'#10b981':'#ef4444'}}>{wish.art==='wunschdienst'?'✓ Wunschdienst':'✕ Wunschfrei'}</div>}
+                      {wlDot && <div className="text-xs" style={{color:wlDot.color}}>{wlDot.label}</div>}
                     </div>
                     {sel&&<SI p={IC.check} size={14} stroke={3}/>}
                   </button>
@@ -2025,7 +2165,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               <pre className="text-xs text-slate-700 font-mono whitespace-pre-wrap leading-relaxed p-4">{shareText}</pre>
             </div>
             {/* Action buttons */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button onClick={()=>{ exportExcelPlan(ma, selSchicht?.datum||today(), shareScope==='single'?selSchicht:null); toast('Excel exportiert ✓'); }}
                 className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
                 style={{background:'rgba(16,185,129,0.06)',borderColor:'rgba(16,185,129,0.2)',color:'#059669'}}>
@@ -2037,6 +2177,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 style={{background:'rgba(59,130,246,0.06)',borderColor:'rgba(59,130,246,0.2)',color:'#2563eb'}}>
                 <SI p={IC.copy} size={18} stroke={1.8}/>
                 <span className="text-xs font-bold">Kopieren</span>
+              </button>
+              <button onClick={()=>{ exportIcal(ma, shareScope==='single'?selSchicht:null); toast('iCal exportiert ✓'); }}
+                className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
+                style={{background:'rgba(99,102,241,0.06)',borderColor:'rgba(99,102,241,0.2)',color:'#6366f1'}}>
+                <SI p={IC.calendar} size={18} stroke={1.8}/>
+                <span className="text-xs font-bold">iCal</span>
               </button>
               <button onClick={()=>{
                 const w=window.open('','_blank','width=800,height=600');
@@ -2083,7 +2229,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATISTIK VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const StatistikView = ({ ma }) => {
+const StatistikView = ({ ma, canEdit }) => {
   const [tab,        setTab]        = useState('personen');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo,   setFilterTo]   = useState('');
@@ -2135,6 +2281,25 @@ const StatistikView = ({ ma }) => {
 
   const maxVal = stats.length ? Math.max(...stats.map(s=>s.total), 1) : 1;
   const avgVal = stats.length ? stats.reduce((s,x)=>s+x.total,0)/stats.length : 0;
+
+  const nowStr = today();
+  const weekStart = (() => { const d=new Date(nowStr); d.setDate(d.getDate()-d.getDay()+1); return d.toISOString().slice(0,10); })();
+  const weekEnd   = (() => { const d=new Date(nowStr); d.setDate(d.getDate()-d.getDay()+7); return d.toISOString().slice(0,10); })();
+  const monthStr  = nowStr.slice(0,7);
+
+  const workloadStats = useMemo(() => {
+    return ma.personen.map(p => {
+      let week=0, month=0, gesamt=0;
+      ma.schichten.forEach(s => s.slots.forEach(sl => {
+        if (sl.personId!==p.id && sl.personId2!==p.id) return;
+        const hits = (sl.personId===p.id?1:0)+(sl.personId2===p.id?1:0);
+        gesamt+=hits;
+        if (s.datum>=weekStart&&s.datum<=weekEnd) week+=hits;
+        if (s.datum.startsWith(monthStr)) month+=hits;
+      }));
+      return { p, week, month, gesamt };
+    }).sort((a,b)=>b.month-a.month);
+  }, [ma, weekStart, weekEnd, monthStr]);
 
   return (
     <div className="space-y-5 up">
@@ -2268,6 +2433,46 @@ const StatistikView = ({ ma }) => {
             })}
           </div>
         )
+      )}
+
+      {/* Workload overview — nur für Admins/Editoren */}
+      {canEdit && workloadStats.some(w=>w.gesamt>0) && (
+        <div className="glass rounded-2xl glow overflow-x-auto">
+          <div className="px-5 py-3" style={{borderBottom:'1px solid rgba(0,0,0,0.06)'}}>
+            <h3 className="font-semibold text-slate-800 text-sm">Auslastungs-Übersicht (aktuell)</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{borderBottom:'1px solid rgba(0,0,0,0.06)'}}>
+                <th className="text-left px-5 py-2.5 text-slate-500 text-xs font-medium">Person</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 text-xs font-medium">Diese Woche</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 text-xs font-medium">Diesen Monat</th>
+                <th className="text-right px-5 py-2.5 text-slate-500 text-xs font-medium">Gesamt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workloadStats.filter(w=>w.gesamt>0).map((w,i)=>{
+                const monthWl = w.month>=5?'#ef4444':w.month>=3?'#f97316':undefined;
+                return (
+                  <tr key={w.p.id} style={{borderTop:'1px solid rgba(0,0,0,0.05)',background:i%2===0?'transparent':'rgba(0,0,0,0.015)'}}>
+                    <td className="px-5 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <Avatar name={w.p.name} farbe={w.p.farbe} size={22}/>
+                        <span className="font-semibold text-slate-800 text-sm">{w.p.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-sm text-slate-700">{w.week}</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-sm" style={{color:monthWl||'#64748b'}}>
+                      {w.month}
+                      {monthWl && <span className="dot ml-1.5 inline-block" style={{background:monthWl,width:7,height:7,verticalAlign:'middle'}}/>}
+                    </td>
+                    <td className="px-5 py-2.5 text-right text-slate-600 text-sm">{w.gesamt}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -3280,7 +3485,7 @@ const App = () => {
         {!isGesamt && page==='gruppen'          && <GruppenView        ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
         {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='verfuegbarkeit'   && <VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/>}
-        {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa}/>}
+        {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
       </main>
     </div>
