@@ -131,11 +131,14 @@ const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 
 // ─── Church Profiles ──────────────────────────────────────────────────────────
-const PROFILES = [
+const DEFAULT_PROFILES = [
   { id:'wunstorf',   label:'Wunstorf',   color:'#06b6d4', grad:'linear-gradient(135deg,#0891b2,#3b82f6)' },
   { id:'schaumburg', label:'Schaumburg',  color:'#10b981', grad:'linear-gradient(135deg,#059669,#06b6d4)' },
   { id:'revive',     label:'Revive',      color:'#8b5cf6', grad:'linear-gradient(135deg,#8b5cf6,#ec4899)' },
 ];
+const GESAMT_PROFILE = { id:'__gesamt__', label:'Gesamt', color:'#334155', grad:'linear-gradient(135deg,#0f172a,#334155)' };
+// PROFILES starts as DEFAULT_PROFILES; App will override from Firebase
+let PROFILES = DEFAULT_PROFILES;
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const ToastContainer = ({ toasts }) => (
@@ -166,6 +169,7 @@ const perms = u => {
 const getAreaAccess = (user, areaId) => {
   if (!user) return 'none';
   if (user.role==='owner'||user.role==='admin') return 'edit';
+  if (areaId==='__gesamt__') return (user.areaAccess||{})['__gesamt__']??'none';
   return (user.areaAccess||{})[areaId]??'none';
 };
 
@@ -2140,12 +2144,139 @@ const StatistikView = ({ ma }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GESAMT VIEW — combined read-only overview of all profiles' Dienstplan
+// ═══════════════════════════════════════════════════════════════════════════════
+const GesamtDienstplanView = ({ profiles }) => {
+  const [allSchichten, setAllSchichten] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all(profiles.map(p => db.collection(p.id).doc('ma').get()))
+      .then(snaps => {
+        const merged = [];
+        snaps.forEach((snap, i) => {
+          const data = snap.data()?.data;
+          const schichten = data?.schichten || [];
+          schichten.forEach(s => merged.push({ ...s, profileId: profiles[i].id, profileLabel: profiles[i].label, profileColor: profiles[i].color }));
+        });
+        setAllSchichten(merged);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [profiles.map(p=>p.id).join(',')]);
+
+  const now = today();
+  const fourWeeksLater = new Date(Date.now() + 28 * 86400000).toISOString().split('T')[0];
+
+  const upcoming = useMemo(() => {
+    return allSchichten
+      .filter(s => s.datum >= now && s.datum <= fourWeeksLater)
+      .sort((a,b) => a.datum.localeCompare(b.datum));
+  }, [allSchichten, now]);
+
+  if (loading) return (
+    <div className="up space-y-5">
+      <div><h1 className="text-xl font-bold" style={{color:'#334155'}}>∑ Gesamt</h1><p className="text-slate-500 text-sm mt-0.5">Lade Dienstpläne aus allen Bereichen…</p></div>
+      <div className="glass rounded-2xl py-16 text-center"><p className="text-slate-400">Verbinde…</p></div>
+    </div>
+  );
+
+  // Group upcoming by date
+  const byDate = {};
+  upcoming.forEach(s => {
+    if (!byDate[s.datum]) byDate[s.datum] = [];
+    byDate[s.datum].push(s);
+  });
+
+  return (
+    <div className="space-y-5 up">
+      <div>
+        <h1 className="text-xl font-bold" style={{color:'#334155'}}>∑ Gesamt</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Nächste 4 Wochen — alle Bereiche · {upcoming.length} Schichten</p>
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-2 flex-wrap">
+        {profiles.map(pp => (
+          <span key={pp.id} className="pill" style={{background:pp.color+'22',color:pp.color,border:`1px solid ${pp.color}44`}}>
+            <span className="dot mr-1" style={{background:pp.color,display:'inline-block',width:7,height:7,borderRadius:'50%'}}/>
+            {pp.label}
+          </span>
+        ))}
+      </div>
+
+      {Object.keys(byDate).length === 0 ? (
+        <div className="glass rounded-2xl py-16 text-center">
+          <div className="text-slate-400 font-medium">Keine Schichten in den nächsten 4 Wochen</div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {Object.entries(byDate).map(([datum, schichten]) => (
+            <div key={datum} className="glass rounded-2xl overflow-hidden glow">
+              <div className="px-4 py-2.5 flex items-center gap-2" style={{borderBottom:'1px solid rgba(0,0,0,0.06)',background:'rgba(0,0,0,0.02)'}}>
+                <span className="font-semibold text-slate-800 text-sm">{fmtDe(datum)}</span>
+                <span className="text-slate-500 text-xs">{new Date(datum+'T00:00:00').toLocaleDateString('de-DE',{weekday:'long'})}</span>
+              </div>
+              <div className="divide-y divide-black/5">
+                {schichten.map(s => (
+                  <div key={s.id||s.datum+s.titel} className="px-4 py-2.5 flex items-center gap-3">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:s.profileColor}}/>
+                    <span className="text-xs font-semibold" style={{color:s.profileColor,minWidth:72}}>{s.profileLabel}</span>
+                    <span className="text-slate-800 text-sm font-medium flex-1">{s.titel || '—'}</span>
+                    <span className="text-slate-500 text-xs">{(s.slots||[]).length} Slots</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="glass rounded-2xl px-4 py-3 flex items-center gap-2">
+        <span className="text-slate-400 text-xs">Dies ist eine schreibgeschützte Gesamtansicht. Zum Bearbeiten bitte einen Bereich oben auswählen.</span>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile }) => {
+const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin }) => {
   const [pin,    setPin]    = useState('');
   const [pin2,   setPin2]   = useState('');
   const [showPw, setShowPw] = useState(false);
+
+  // Bereiche-State (admin only)
+  const [bName,      setBName]    = useState('');
+  const [bColor,     setBColor]   = useState('#06b6d4');
+  const [bEditId,    setBEditId]  = useState(null);
+  const [bEditName,  setBEditName]= useState('');
+  const [bEditColor, setBEditColor]= useState('');
+  const saveProfiles = newProfiles => {
+    if (setProfiles) { setProfiles(newProfiles); PROFILES = newProfiles; }
+    db.collection('config').doc('profiles').set({ data: newProfiles }).catch(()=>{});
+  };
+  const addBereich = () => {
+    if (!bName.trim() || !profiles) return;
+    const id = bName.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Math.random().toString(36).slice(2,5);
+    saveProfiles([...profiles, { id, label: bName.trim(), color: bColor, grad: `linear-gradient(135deg,${bColor},#334155)` }]);
+    setBName(''); setBColor('#06b6d4');
+    toast('Bereich hinzugefügt ✓');
+  };
+  const saveBereich = id => {
+    if (!profiles) return;
+    saveProfiles(profiles.map(p => p.id===id ? { ...p, label: bEditName, color: bEditColor, grad: `linear-gradient(135deg,${bEditColor},#334155)` } : p));
+    setBEditId(null); toast('Bereich gespeichert ✓');
+  };
+  const removeBereich = id => {
+    if (!profiles) return;
+    const pr = profiles.find(p=>p.id===id);
+    if (!confirm(`Bereich "${pr?.label}" wirklich löschen?\n\nAlle Einträge bleiben erhalten, sind aber nicht mehr sichtbar.`)) return;
+    saveProfiles(profiles.filter(p => p.id !== id));
+    toast('Bereich gelöscht', 'warn');
+  };
 
   const savePin = async () => {
     if (!pin) { toast('Bitte PIN eingeben','error'); return; }
@@ -2236,6 +2367,52 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile }) => 
           </div>
         ))}
       </div>
+
+      {/* Bereiche (admin only) */}
+      {isAdmin && profiles && setProfiles && (
+        <>
+          <div className="glass rounded-2xl p-5 glow space-y-3">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Bereiche verwalten</p>
+            <p className="text-slate-500 text-xs">Standorte/Bereiche hinzufügen, umbenennen oder entfernen. Der Tab "Gesamt" ist immer vorhanden.</p>
+            <div className="flex gap-2">
+              <input value={bName} onChange={e => setBName(e.target.value)} placeholder="Name des neuen Bereichs"
+                className={"flex-1 "+INP} onKeyDown={e => e.key === 'Enter' && addBereich()}/>
+              <button onClick={addBereich} className="bg-white hover:bg-gray-100 text-black px-4 py-2.5 text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>Hinzufügen</button>
+            </div>
+            <ColorPicker value={bColor} onChange={setBColor}/>
+          </div>
+          <div className="glass rounded-2xl p-5 glow space-y-2">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Vorhandene Bereiche</p>
+            {profiles.map(pr => (
+              <div key={pr.id} className="p-3 rounded-xl bg-black/[0.03] border border-black/8">
+                {bEditId === pr.id ? (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 items-center">
+                      <input value={bEditName} onChange={e => setBEditName(e.target.value)}
+                        className={"flex-1 "+INP_SM} autoFocus onKeyDown={e => e.key === 'Enter' && saveBereich(pr.id)}/>
+                      <button onClick={() => saveBereich(pr.id)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-900/40 text-emerald-400 hover:bg-emerald-900/60 transition-all"><SI p={IC.check} size={13}/></button>
+                      <button onClick={() => setBEditId(null)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 text-slate-500 transition-all"><SI p={IC.x} size={13}/></button>
+                    </div>
+                    <ColorPicker value={bEditColor} onChange={setBEditColor}/>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="dot" style={{ width: 12, height: 12, borderRadius: 3, background: pr.color, flexShrink: 0 }}/>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-slate-800 text-sm font-medium">{pr.label}</span>
+                      <span className="text-slate-500 text-xs ml-2">id: {pr.id}</span>
+                    </div>
+                    <button onClick={() => { setBEditId(pr.id); setBEditName(pr.label); setBEditColor(pr.color); }}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-900/30 text-slate-500 hover:text-blue-400 transition-all"><SI p={IC.edit} size={13}/></button>
+                    <button onClick={() => removeBereich(pr.id)}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-900/25 text-slate-500 hover:text-red-400 transition-all"><SI p={IC.trash} size={13}/></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Danger Zone */}
       <div className="glass rounded-2xl p-5" style={{borderColor:'rgba(239,68,68,0.2)'}}>
@@ -2433,13 +2610,13 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
               <div className="pt-1">
                 <label className="text-slate-500 text-xs block mb-2">Bereichs-Zugang</label>
                 <div className="space-y-2">
-                  {PROFILES.map(pr => {
-                    const acc = (form.areaAccess||{})[pr.id]??'edit';
+                  {[...PROFILES, { id:'__gesamt__', label:'Gesamt (Übersicht)', color:'#334155' }].map(pr => {
+                    const acc = (form.areaAccess||{})[pr.id]??'none';
                     return (
                       <div key={pr.id}>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:pr.color}}/>
-                          <span className="text-slate-700 text-xs font-semibold w-20 flex-shrink-0">{pr.label}</span>
+                          <span className="text-slate-700 text-xs font-semibold w-24 flex-shrink-0">{pr.label}</span>
                           <div className="flex gap-1 flex-1">
                             {[['none','Kein'],['view','Ansehen'],['edit','Bearbeiten']].map(([lvl,lbl])=>(
                               <button key={lvl} type="button"
@@ -2450,7 +2627,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
                             ))}
                           </div>
                         </div>
-                        {pr.id===currentProfile && acc!=='none' && (ma?.gruppen||[]).length>0 && (
+                        {pr.id===currentProfile && acc!=='none' && pr.id!=='__gesamt__' && (ma?.gruppen||[]).length>0 && (
                           <div className="ml-5 mt-1.5 flex flex-wrap gap-1.5 items-center">
                             <span className="text-slate-400 text-xs flex-shrink-0">Teams:</span>
                             {(ma.gruppen||[]).map(g => {
@@ -2734,6 +2911,7 @@ const App = () => {
     if (s==='guest') return null;
     try { return JSON.parse(s); } catch { return undefined; }
   });
+  const [profiles,   setProfiles]   = useState(DEFAULT_PROFILES);
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
   const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
   const [sharedMa,  setSharedMa]  = useState(() => loadJSON('ma-data-shared', DEFAULT_SHARED()));
@@ -2753,13 +2931,25 @@ const App = () => {
     return () => unsub();
   }, []);
 
+  // Load dynamic profiles from Firebase on init
+  useEffect(() => {
+    db.collection('config').doc('profiles').get()
+      .then(snap => {
+        const data = snap.data()?.data;
+        if (data && data.length) { setProfiles(data); PROFILES = data; }
+      })
+      .catch(() => {});
+  }, []);
+
   const p           = perms(currentUser);
   const isAdmin     = p.settings;
-  const canEdit     = p.edit && getAreaAccess(currentUser, profile) === 'edit';
+  const isGesamt    = profile === '__gesamt__';
+  const canEdit     = !isGesamt && p.edit && getAreaAccess(currentUser, profile) === 'edit';
   const canDel      = p.del;
   const canSettings = p.settings;
   const canProfiles = p.profiles;
-  const curProfile  = PROFILES.find(pp=>pp.id===profile) || PROFILES[2];
+  const canGesamt   = !currentUser || currentUser.role==='owner' || currentUser.role==='admin' || getAreaAccess(currentUser,'__gesamt__')!=='none';
+  const curProfile  = profiles.find(pp=>pp.id===profile) || profiles[profiles.length-1] || GESAMT_PROFILE;
 
   const toast = (msg, type='success') => {
     const id = genId();
@@ -2773,9 +2963,9 @@ const App = () => {
 
   // Which church profiles this user may see
   const visibleProfiles = useMemo(() => {
-    if (!currentUser||currentUser.role==='owner'||currentUser.role==='admin') return PROFILES;
-    return PROFILES.filter(p=>getAreaAccess(currentUser,p.id)!=='none');
-  }, [currentUser]);
+    if (!currentUser||currentUser.role==='owner'||currentUser.role==='admin') return profiles;
+    return profiles.filter(pp=>getAreaAccess(currentUser,pp.id)!=='none');
+  }, [currentUser, profiles]);
 
   const allowedGroups = useMemo(() => {
     if (!currentUser||currentUser.role==='owner'||currentUser.role==='admin') return null;
@@ -2791,6 +2981,7 @@ const App = () => {
 
   // Auto-redirect if current profile is outside allowed areas
   useEffect(() => {
+    if (isGesamt) return;
     if (visibleProfiles.length>0 && !visibleProfiles.find(pp=>pp.id===profile)) {
       switchProfile(visibleProfiles[0].id);
     }
@@ -2806,6 +2997,7 @@ const App = () => {
   };
 
   useEffect(() => {
+    if (profile === '__gesamt__') return;
     const localKey = `ma-data-${profile}`;
     const cached = localStorage.getItem(localKey);
     setSyncState(cached ? 'synced' : 'connecting');
@@ -2865,7 +3057,9 @@ const App = () => {
   if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
   if (currentUser === undefined) return <LoginScreen onLogin={login} ownerPin={ownerPin}/>;
 
-  const TABS = [
+  const TABS = isGesamt ? [
+    { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
+  ] : [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
     ...(p.edit ? [{ id:'personen', label:'Personen', icon:IC.person }] : []),
     ...(canEdit ? [
@@ -2893,17 +3087,29 @@ const App = () => {
           </div>
 
           {/* Profile switcher — centered */}
-          <div className="flex gap-1.5 mx-auto items-center">
-            {visibleProfiles.map(p => (
-              <button key={p.id} onClick={() => switchProfile(p.id)}
+          <div className="flex gap-1.5 mx-auto items-center flex-wrap justify-center">
+            {canGesamt && (
+              <button onClick={() => switchProfile('__gesamt__')}
                 className="px-3.5 py-1.5 text-xs font-bold transition-all"
                 style={{
                   borderRadius: 30,
-                  background: profile===p.id ? '#ffffff' : 'transparent',
-                  color: profile===p.id ? '#000000' : 'rgba(255,255,255,0.4)',
-                  border: profile===p.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.12)',
+                  background: profile==='__gesamt__' ? '#334155' : 'transparent',
+                  color: profile==='__gesamt__' ? '#ffffff' : 'rgba(255,255,255,0.35)',
+                  border: profile==='__gesamt__' ? '1px solid #475569' : '1px solid rgba(255,255,255,0.1)',
                 }}>
-                {p.label}
+                ∑ Gesamt
+              </button>
+            )}
+            {visibleProfiles.map(pp => (
+              <button key={pp.id} onClick={() => switchProfile(pp.id)}
+                className="px-3.5 py-1.5 text-xs font-bold transition-all"
+                style={{
+                  borderRadius: 30,
+                  background: profile===pp.id ? '#ffffff' : 'transparent',
+                  color: profile===pp.id ? '#000000' : 'rgba(255,255,255,0.4)',
+                  border: profile===pp.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.12)',
+                }}>
+                {pp.label}
               </button>
             ))}
           </div>
@@ -2937,12 +3143,13 @@ const App = () => {
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
-        {page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} onTausch={currentUser?updateMa:null} toast={toast} allowedGroups={allowedGroups} currentUser={currentUser}/>}
-        {page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
-        {page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
-        {page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
-        {page==='statistik'     && <StatistikView  ma={fullMa}/>}
-        {page==='einstellungen' && canSettings  && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile}/>}
+        {isGesamt && page==='dienstplan' && <GesamtDienstplanView profiles={profiles}/>}
+        {!isGesamt && page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} onTausch={currentUser?updateMa:null} toast={toast} allowedGroups={allowedGroups} currentUser={currentUser}/>}
+        {!isGesamt && page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
+        {!isGesamt && page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
+        {!isGesamt && page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {!isGesamt && page==='statistik'     && <StatistikView  ma={fullMa}/>}
+        {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
       </main>
     </div>
   );
