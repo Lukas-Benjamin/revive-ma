@@ -1244,6 +1244,67 @@ const VorlagenView = ({ ma, onChange, toast }) => {
   );
 };
 
+// ─── Conflict Check ───────────────────────────────────────────────────────────
+const computeConflicts = (ma) => {
+  const result = [];
+  const schichten = ma.schichten || [];
+  const abwesenheiten = ma.abwesenheiten || [];
+  const konfliktePersonen = ma.konflikte || [];
+  const praeferenzen = ma.praeferenzen || [];
+
+  schichten.forEach(s => {
+    const datum = s.datum;
+    const assignedIds = new Set();
+    s.slots.forEach(sl => {
+      [sl.personId, sl.personId2].filter(Boolean).forEach(pid => {
+        const person = ma.personen.find(p => p.id === pid);
+        if (!person) return;
+        const absent = abwesenheiten.some(a => a.personId===pid && datum>=a.from && datum<=(a.to||a.from));
+        if (absent) result.push({ type:'abwesend', schichtId:s.id, slotId:sl.id, personId:pid, datum, msg:`${person.name} ist abwesend` });
+        const vermeidet = praeferenzen.some(pf => pf.personId===pid && pf.dienstId===sl.dienstId && pf.prio==='vermeidet');
+        if (vermeidet) {
+          const g = ma.gruppen.find(x=>x.id===sl.gruppeId);
+          const d = (g?.dienste||[]).find(x=>x.id===sl.dienstId);
+          result.push({ type:'praeferenz', schichtId:s.id, slotId:sl.id, personId:pid, datum, msg:`${person.name} vermeidet „${d?.name||'?'}"` });
+        }
+        assignedIds.add(pid);
+      });
+    });
+    const assignedArr = [...assignedIds];
+    konfliktePersonen.forEach(k => {
+      if (assignedArr.includes(k.p1) && assignedArr.includes(k.p2)) {
+        const p1 = ma.personen.find(p=>p.id===k.p1);
+        const p2 = ma.personen.find(p=>p.id===k.p2);
+        if (!result.some(r=>r.type==='personenkonflikt'&&r.schichtId===s.id&&((r.personId===k.p1&&r.personId2===k.p2)||(r.personId===k.p2&&r.personId2===k.p1)))) {
+          result.push({ type:'personenkonflikt', schichtId:s.id, personId:k.p1, personId2:k.p2, datum, msg:`${p1?.name||'?'} & ${p2?.name||'?'} nicht zusammen einteilen` });
+        }
+      }
+    });
+  });
+
+  const byDate = {};
+  schichten.forEach(s => { if(!byDate[s.datum])byDate[s.datum]=[]; byDate[s.datum].push(s); });
+  Object.entries(byDate).forEach(([datum, daySchichten]) => {
+    if (daySchichten.length < 2) return;
+    const personSlots = {};
+    daySchichten.forEach(s => s.slots.forEach(sl => {
+      [sl.personId, sl.personId2].filter(Boolean).forEach(pid => {
+        if(!personSlots[pid])personSlots[pid]=[];
+        personSlots[pid].push(s.id);
+      });
+    }));
+    Object.entries(personSlots).forEach(([pid, schichtIds]) => {
+      const unique = [...new Set(schichtIds)];
+      if (unique.length > 1 && !result.some(r=>r.type==='doppeltag'&&r.personId===pid&&r.datum===datum)) {
+        const person = ma.personen.find(p=>p.id===pid);
+        result.push({ type:'doppeltag', schichtId:unique[0], personId:pid, datum, msg:`${person?.name||'?'} in mehreren Schichten am ${fmtDe(datum)}`, schichtIds:unique });
+      }
+    });
+  });
+
+  return result;
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // DIENSTPLAN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1268,6 +1329,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [dupModal,     setDupModal]    = useState(null); // schicht to duplicate
   const [dupDate,      setDupDate]     = useState('');
   const [recur,        setRecur]       = useState({ enabled:false, type:'weekly', until:'' });
+  const [showConflicts, setShowConflicts] = useState(false);
+  const conflicts = useMemo(() => computeConflicts(ma), [ma]);
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => {
@@ -1634,6 +1697,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.zap} size={13}/> Auto-Plan
           </button>}
+          {onChange && conflicts.length>0 && (
+            <button onClick={()=>setShowConflicts(p=>!p)}
+              className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 transition-all"
+              style={{borderRadius:30, background:showConflicts?'rgba(239,68,68,0.15)':'rgba(239,68,68,0.08)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.25)'}}>
+              ⚡ {conflicts.length} Konflikt{conflicts.length!==1?'e':''}
+            </button>
+          )}
           <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             📅 Kalender
           </button>
@@ -1676,6 +1746,33 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                   <span className="text-slate-500"> · {d?.name||'?'} · {schicht?fmtDe(schicht.datum):''}</span>
                 </div>
                 <SI p={IC.chevronRight} size={12} className="text-slate-400 flex-shrink-0"/>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Konflikt-Panel */}
+      {showConflicts && conflicts.length>0 && (
+        <div className="glass rounded-2xl p-4 space-y-2.5 up" style={{borderLeft:'3px solid rgba(239,68,68,0.6)'}}>
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider" style={{color:'#ef4444'}}>⚡ Planungs-Konflikte</div>
+            <button onClick={()=>setShowConflicts(false)} className="ml-auto text-slate-400 hover:text-slate-700 transition-all"><SI p={IC.x} size={12}/></button>
+          </div>
+          {conflicts.map((c,i) => {
+            const schicht = ma.schichten.find(s=>s.id===c.schichtId);
+            const person  = ma.personen.find(p=>p.id===c.personId);
+            const typeIcon = c.type==='abwesend'?'🏖':c.type==='praeferenz'?'⚠️':c.type==='personenkonflikt'?'🚫':'📅';
+            return (
+              <div key={i} onClick={()=>{setSelSchichtId(c.schichtId);setView('detail');setShowConflicts(false);}}
+                className="flex items-start gap-2.5 cursor-pointer hover:opacity-80 transition-all p-2 rounded-xl"
+                style={{background:'rgba(239,68,68,0.05)'}}>
+                <span className="text-base flex-shrink-0 mt-0.5">{typeIcon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-slate-700">{c.msg}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{schicht?`${fmtDe(schicht.datum)}${schicht.titel?' · '+schicht.titel:''}`:fmtDe(c.datum)}</div>
+                </div>
+                <SI p={IC.chevronRight} size={12} className="text-slate-400 flex-shrink-0 mt-1"/>
               </div>
             );
           })}
@@ -1729,6 +1826,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                         ? <span className="pill" style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>✓ Veröffentlicht</span>
                         : <span className="pill" style={{background:'rgba(100,116,139,0.15)',color:'#64748b'}}>Entwurf</span>}
                       {openRequests>0 && <span className="pill" style={{background:'rgba(251,146,60,0.18)',color:'#f97316'}}>🔄 {openRequests} Tausch</span>}
+                      {conflicts.some(c=>c.schichtId===s.id) && <span className="pill" style={{background:'rgba(239,68,68,0.12)',color:'#ef4444'}}>⚡ {conflicts.filter(c=>c.schichtId===s.id).length} Konflikt{conflicts.filter(c=>c.schichtId===s.id).length!==1?'e':''}</span>}
                       {s.planId && (ma.plaene||[]).find(p=>p.id===s.planId) && <span className="pill text-xs" style={{background:'rgba(99,102,241,0.12)',color:'#818cf8'}}>{(ma.plaene||[]).find(p=>p.id===s.planId)?.name}</span>}
                     </div>
                     <div className="text-slate-600 text-xs mb-2">{filled}/{s.slots.length} Slots besetzt</div>
@@ -2095,6 +2193,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 const sel = cur===p.id;
                 const wish = (selSchicht.wuensche||[]).find(w=>w.personId===p.id&&w.slotId===selSlot.id);
                 const isAbsent = (ma.abwesenheiten||[]).some(a => a.personId===p.id && schichtDatum>=a.from && schichtDatum<=(a.to||a.from));
+                const alreadyAssigned = selSchicht.slots.some(other => other.id!==selSlot.id && (other.personId===p.id||other.personId2===p.id));
+                const alreadyOtherShift = ma.schichten.some(s2 => s2.id!==selSchicht.id && s2.datum===schichtDatum && s2.slots.some(sl2=>sl2.personId===p.id||sl2.personId2===p.id));
+                const vermeidetDienst = (ma.praeferenzen||[]).some(pf=>pf.personId===p.id&&pf.dienstId===selSlot.dienstId&&pf.prio==='vermeidet');
+                const hasPersonenkonflikt = selSchicht.slots.some(other=>{
+                  const others=[other.personId,other.personId2].filter(Boolean);
+                  return others.some(oid=>(ma.konflikte||[]).some(k=>(k.p1===p.id&&k.p2===oid)||(k.p2===p.id&&k.p1===oid)));
+                });
                 const wl = canShowWorkload ? (monthCounts[p.id]||0) : 0;
                 const wlDot = canShowWorkload && wl>=5 ? { color:'#ef4444', label:`${wl} Dienste – hohe Auslastung` }
                             : canShowWorkload && wl>=3 ? { color:'#f97316', label:`${wl} Dienste diesen Monat` }
@@ -2107,7 +2212,11 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                     <div className="flex-1 text-left">
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-sm" style={{color:sel?p.farbe:'#e2e8f0'}}>{p.name}</span>
-                        {isAbsent && <span title="Abwesenheit eingetragen" className="text-xs font-bold text-amber-400">⚠ abwesend</span>}
+                        {isAbsent && <span title="Abwesenheit eingetragen" className="text-xs font-bold text-amber-400">🏖 abwesend</span>}
+                        {alreadyAssigned && !isAbsent && <span className="text-xs font-bold text-orange-400">↩ Doppeldienst</span>}
+                        {alreadyOtherShift && !isAbsent && !alreadyAssigned && <span className="text-xs font-bold text-orange-400">📅 and. Schicht</span>}
+                        {vermeidetDienst && <span className="text-xs font-bold" style={{color:'#f97316'}}>⚠ vermeidet</span>}
+                        {hasPersonenkonflikt && <span className="text-xs font-bold text-red-400">🚫 Konflikt</span>}
                         {wlDot && <span title={wlDot.label} className="dot flex-shrink-0" style={{background:wlDot.color,width:8,height:8}}/>}
                       </div>
                       {wish&&<div className="text-xs" style={{color:wish.art==='wunschdienst'?'#10b981':'#ef4444'}}>{wish.art==='wunschdienst'?'✓ Wunschdienst':'✕ Wunschfrei'}</div>}
