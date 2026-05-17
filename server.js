@@ -2,7 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
-const babel   = require('@babel/core');
+
+// Use @babel/standalone (same engine as the CDN browser version) for server-side JSX compile
+const Babel   = require('@babel/standalone');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -20,35 +22,25 @@ const firebaseConfig = JSON.stringify({
 let compiledHtml;
 try {
   const tmpl = fs.readFileSync(path.join(__dirname, 'template.html'), 'utf8');
-  // Extract JSX block and compile server-side
   const compiled = tmpl.replace(
     /<script type="text\/babel">([\s\S]*?)<\/script>/,
     (_, jsx) => {
-      const result = babel.transformSync(jsx, {
-        presets: [
-          ['@babel/preset-react', { runtime: 'classic' }],
-        ],
-        plugins: [
-          '@babel/plugin-transform-optional-chaining',
-          '@babel/plugin-transform-nullish-coalescing-operator',
-        ],
-        compact: false,
+      const result = Babel.transform(jsx, {
+        presets: ['react'],
+        plugins: ['transform-optional-chaining', 'transform-nullish-coalescing-operator'],
         sourceType: 'script',
       });
       return `<script>\n${result.code}\n</script>`;
     }
   );
-  // Remove Babel standalone CDN tag (no longer needed)
-  compiledHtml = compiled.replace(/<script[^>]*babel[^>]*><\/script>\n?/g, '');
+  compiledHtml = compiled;
   console.log('JSX compiled successfully at startup');
 } catch (err) {
   console.error('Babel compilation error:', err.message);
-  // Show error directly in the page so we can diagnose it
   const errMsg = (err.message || 'Unknown error').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   compiledHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Compile Error</title></head><body>
-    <pre style="padding:24px;font-family:monospace;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin:24px;white-space:pre-wrap">
-BABEL COMPILE ERROR:\n${errMsg}
-    </pre></body></html>`;
+    <pre style="padding:24px;font-family:monospace;font-size:13px;color:#dc2626;background:#fef2f2;margin:24px;white-space:pre-wrap">BABEL COMPILE ERROR:\n${errMsg}</pre>
+  </body></html>`;
 }
 
 app.get('/', (req, res) => {
