@@ -125,7 +125,7 @@ const buildPlanText = (ma, single) => {
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[] });
+const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[], abwesenheiten:[] });
 const DEFAULT_SHARED = () => ({ personen:[], konflikte:[], praeferenzen:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
@@ -241,10 +241,6 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
   const [form,       setForm]       = useState({ name:'', farbe:'#8b5cf6', gruppenIds:[], dienste:[], pin:'', role:'viewer', areaAccess:{}, areaGroups:{}, notiz:'' });
   const [showPin,    setShowPin]    = useState(false);
   const [loginUsers, setLoginUsers] = useState([]);
-  const [konModal,   setKonModal]   = useState(false);
-  const [konForm,    setKonForm]    = useState({ p1:'', p2:'', note:'' });
-  const [prefModal,  setPrefModal]  = useState(false);
-  const [prefForm,   setPrefForm]   = useState({ personId:'', dienstId:'', prio:'bevorzugt' });
   const [search,     setSearch]     = useState('');
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
@@ -403,200 +399,9 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
         );
       })()}
 
-      {/* ── Extras ── */}
-      {onChange && (() => {
-        const visPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
-        const visKonflikte = (ma.konflikte||[]).filter(k => {
-          const pa = ma.personen.find(p=>p.id===k.p1);
-          const pb = ma.personen.find(p=>p.id===k.p2);
-          if (!pa||!pb) return false;
-          if (allowedGroups) {
-            const ag=(pa.gruppenIds||(pa.gruppeId?[pa.gruppeId]:[])), bg=(pb.gruppenIds||(pb.gruppeId?[pb.gruppeId]:[]));
-            return ag.some(g=>allowedGroups.includes(g))&&bg.some(g=>allowedGroups.includes(g));
-          }
-          return true;
-        });
-        const visPraef = (ma.praeferenzen||[]).filter(pf => {
-          const p = ma.personen.find(x=>x.id===pf.personId);
-          if (!p) return false;
-          if (allowedGroups) return (p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g));
-          return true;
-        });
-        // collect all dienste across all groups
-        const allDienste = [];
-        const seen = new Set();
-        ma.gruppen.forEach(g => (g.dienste||[]).forEach(d => { if(!seen.has(d.id)){seen.add(d.id);allDienste.push({...d,grp:g});} }));
-        return (
-          <div className="space-y-3">
-            <h2 className="text-base font-bold text-slate-800 px-1">Extras</h2>
+      {/* Note: Ausnahmen & Dienstpräferenzen moved to "Verfügbarkeit" tab */}
 
-            {/* Konflikte */}
-            <div className="glass rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-slate-800 text-sm font-semibold">Ausnahmen</p>
-                  <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden</p>
-                </div>
-                <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={visPersonen.length<2}
-                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
-                  <SI p={IC.plus} size={12}/> Ausnahme
-                </button>
-              </div>
-              {visKonflikte.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Ausnahmen definiert</p>}
-              {visKonflikte.map(k => {
-                const pa = ma.personen.find(p=>p.id===k.p1);
-                const pb = ma.personen.find(p=>p.id===k.p2);
-                return (
-                  <div key={k.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.12)'}}>
-                    <Avatar name={pa.name} farbe={pa.farbe} size={26}/>
-                    <span className="text-slate-700 text-xs font-semibold truncate">{pa.name}</span>
-                    <span className="text-red-400 text-xs font-bold flex-shrink-0">✕</span>
-                    <Avatar name={pb.name} farbe={pb.farbe} size={26}/>
-                    <span className="text-slate-700 text-xs font-semibold truncate">{pb.name}</span>
-                    {k.note && <span className="text-slate-400 text-xs truncate flex-1">· {k.note}</span>}
-                    <button onClick={()=>onChange(m=>({...m,konflikte:(m.konflikte||[]).filter(x=>x.id!==k.id)}))}
-                      className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Dienstpräferenzen */}
-            <div className="glass rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-slate-800 text-sm font-semibold">Dienstpräferenzen</p>
-                  <p className="text-slate-500 text-xs mt-0.5">Welche Dienste jemand bevorzugt oder vermeidet</p>
-                </div>
-                <button onClick={()=>{setPrefForm({personId:'',dienstId:'',prio:'bevorzugt'});setPrefModal(true);}} disabled={visPersonen.length===0||allDienste.length===0}
-                  className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
-                  <SI p={IC.plus} size={12}/> Präferenz
-                </button>
-              </div>
-              {visPraef.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Präferenzen definiert</p>}
-              {visPraef.map(pf => {
-                const person = ma.personen.find(p=>p.id===pf.personId);
-                const dienst = allDienste.find(d=>d.id===pf.dienstId);
-                if(!person||!dienst) return null;
-                const isBev = pf.prio==='bevorzugt';
-                return (
-                  <div key={pf.id} className="flex items-center gap-2 p-2.5 rounded-xl"
-                    style={{background:isBev?'rgba(16,185,129,0.05)':'rgba(239,68,68,0.05)',border:`1px solid ${isBev?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.12)'}`}}>
-                    <Avatar name={person.name} farbe={person.farbe} size={26}/>
-                    <span className="text-slate-700 text-xs font-semibold truncate">{person.name}</span>
-                    <span className={`text-xs font-bold flex-shrink-0 ${isBev?'text-emerald-500':'text-red-400'}`}>{isBev?'bevorzugt':'vermeidet'}</span>
-                    <span className="pill text-xs flex-shrink-0" style={{background:dienst.grp.farbe+'22',color:dienst.grp.farbe}}>{dienst.name}</span>
-                    {pf.note && <span className="text-slate-400 text-xs truncate flex-1">· {pf.note}</span>}
-                    <button onClick={()=>onChange(m=>({...m,praeferenzen:(m.praeferenzen||[]).filter(x=>x.id!==pf.id)}))}
-                      className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Konflikt-Modal */}
-      {konModal && (
-        <Modal title="Ausnahme hinzufügen" onClose={()=>setKonModal(false)}>
-          <div className="space-y-4">
-            <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
-            {(() => {
-              const kPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
-              return (<>
-                <div>
-                  <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
-                  <select value={konForm.p1} onChange={e=>setKonForm(f=>({...f,p1:e.target.value,p2:f.p2===e.target.value?'':f.p2}))} className={"w-full "+INP}>
-                    <option value="">— auswählen —</option>
-                    {kPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-slate-400 text-xs block mb-1.5">Person 2 *</label>
-                  <select value={konForm.p2} onChange={e=>setKonForm(f=>({...f,p2:e.target.value}))} className={"w-full "+INP}>
-                    <option value="">— auswählen —</option>
-                    {kPersonen.filter(p=>p.id!==konForm.p1).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-              </>);
-            })()}
-            <div>
-              <label className="text-slate-400 text-xs block mb-1.5">Grund (optional)</label>
-              <input value={konForm.note} onChange={e=>setKonForm(f=>({...f,note:e.target.value}))}
-                placeholder="z. B. Geschwister, persönlicher Konflikt…" className={"w-full "+INP}/>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button onClick={()=>{
-                if(!konForm.p1||!konForm.p2) return;
-                onChange(m=>({...m,konflikte:[...(m.konflikte||[]),{id:genId(),p1:konForm.p1,p2:konForm.p2,note:konForm.note.trim()}]}));
-                toast('Ausnahme gespeichert');
-                setKonModal(false);
-              }} disabled={!konForm.p1||!konForm.p2}
-                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
-                Speichern
-              </button>
-              <button onClick={()=>setKonModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Präferenz-Modal */}
-      {prefModal && (() => {
-        const pPersonen = allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen;
-        const allD = []; const seenD = new Set();
-        ma.gruppen.forEach(g=>(g.dienste||[]).forEach(d=>{if(!seenD.has(d.id)){seenD.add(d.id);allD.push({...d,grp:g});}}));
-        return (
-          <Modal title="Dienstpräferenz hinzufügen" onClose={()=>setPrefModal(false)}>
-            <div className="space-y-4">
-              <div>
-                <label className="text-slate-400 text-xs block mb-1.5">Person *</label>
-                <select value={prefForm.personId} onChange={e=>setPrefForm(f=>({...f,personId:e.target.value}))} className={"w-full "+INP}>
-                  <option value="">— auswählen —</option>
-                  {pPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs block mb-1.5">Dienst *</label>
-                <select value={prefForm.dienstId} onChange={e=>setPrefForm(f=>({...f,dienstId:e.target.value}))} className={"w-full "+INP}>
-                  <option value="">— auswählen —</option>
-                  {allD.map(d=><option key={d.id} value={d.id}>{d.name} ({d.grp.name})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs block mb-2">Typ *</label>
-                <div className="flex gap-2">
-                  {[['bevorzugt','Bevorzugt','#10b981'],['vermeidet','Vermeidet','#ef4444']].map(([val,lbl,col])=>(
-                    <button key={val} type="button" onClick={()=>setPrefForm(f=>({...f,prio:val}))}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all border"
-                      style={prefForm.prio===val?{background:col+'18',color:col,borderColor:col+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
-                      {val==='bevorzugt'?'👍 ':' 👎 '}{lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs block mb-1.5">Notiz (optional)</label>
-                <input value={prefForm.note||''} onChange={e=>setPrefForm(f=>({...f,note:e.target.value}))}
-                  placeholder="z. B. aus gesundheitl. Gründen…" className={"w-full "+INP}/>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={()=>{
-                  if(!prefForm.personId||!prefForm.dienstId) return;
-                  onChange(m=>({...m,praeferenzen:[...(m.praeferenzen||[]),{id:genId(),personId:prefForm.personId,dienstId:prefForm.dienstId,prio:prefForm.prio,note:(prefForm.note||'').trim()}]}));
-                  toast('Präferenz gespeichert');
-                  setPrefModal(false);
-                }} disabled={!prefForm.personId||!prefForm.dienstId}
-                  className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
-                  Speichern
-                </button>
-                <button onClick={()=>setPrefModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
-              </div>
-            </div>
-          </Modal>
-        );
-      })()}
+      {/* Ausnahmen & Präferenzen moved to Verfügbarkeit tab */}
 
       {modal && (
         <Modal title={modal==='add'?'Person hinzufügen':'Person bearbeiten'} onClose={() => setModal(null)}>
@@ -764,6 +569,292 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// VERFÜGBARKEIT VIEW  (Abwesenheiten + Ausnahmen + Dienstpräferenzen)
+// ═══════════════════════════════════════════════════════════════════════════════
+const VerfuegbarkeitView = ({ ma, onChange, onChangeMa, toast }) => {
+  // --- Abwesenheiten state ---
+  const [absModal,   setAbsModal]   = useState(false);
+  const [absForm,    setAbsForm]    = useState({ personId:'', from:'', to:'', reason:'' });
+
+  // --- Ausnahmen (Konflikte) state ---
+  const [konModal,   setKonModal]   = useState(false);
+  const [konForm,    setKonForm]    = useState({ p1:'', p2:'', note:'' });
+
+  // --- Dienstpräferenzen state ---
+  const [prefModal,  setPrefModal]  = useState(false);
+  const [prefForm,   setPrefForm]   = useState({ personId:'', dienstId:'', prio:'bevorzugt' });
+
+  const visPersonen = ma.personen;
+  const visKonflikte = (ma.konflikte||[]).filter(k => {
+    const pa = ma.personen.find(p=>p.id===k.p1);
+    const pb = ma.personen.find(p=>p.id===k.p2);
+    return !!(pa && pb);
+  });
+  const visPraef = (ma.praeferenzen||[]).filter(pf => !!ma.personen.find(x=>x.id===pf.personId));
+  const allDienste = [];
+  const seen = new Set();
+  ma.gruppen.forEach(g => (g.dienste||[]).forEach(d => { if(!seen.has(d.id)){seen.add(d.id);allDienste.push({...d,grp:g});} }));
+  const allDiensteMap = {};
+  ma.gruppen.forEach(g=>(g.dienste||[]).forEach(d=>{allDiensteMap[d.id]=d;}));
+
+  const today2 = today();
+  const currentAbw = (ma.abwesenheiten||[]).filter(a => !a.to || a.to >= today2);
+
+  const saveKonflikte = () => {
+    if (!konForm.p1 || !konForm.p2) return;
+    onChange(m=>({...m, konflikte:[...(m.konflikte||[]), {id:genId(), p1:konForm.p1, p2:konForm.p2, note:konForm.note.trim()}]}));
+    toast('Ausnahme gespeichert');
+    setKonModal(false);
+  };
+
+  const savePref = () => {
+    if (!prefForm.personId || !prefForm.dienstId) return;
+    onChange(m=>({...m, praeferenzen:[...(m.praeferenzen||[]), {id:genId(), personId:prefForm.personId, dienstId:prefForm.dienstId, prio:prefForm.prio, note:(prefForm.note||'').trim()}]}));
+    toast('Präferenz gespeichert');
+    setPrefModal(false);
+  };
+
+  const saveAbsenz = () => {
+    if (!absForm.personId || !absForm.from) return;
+    const entry = { id:genId(), personId:absForm.personId, from:absForm.from, to:absForm.to||absForm.from, reason:absForm.reason.trim() };
+    const updater = onChangeMa || onChange;
+    if (updater) updater(m=>({...m, abwesenheiten:[...(m.abwesenheiten||[]), entry]}));
+    toast('Abwesenheit gespeichert');
+    setAbsModal(false);
+    setAbsForm({ personId:'', from:'', to:'', reason:'' });
+  };
+
+  return (
+    <div className="space-y-5 up">
+      <div>
+        <h1 className="text-xl font-bold grad">Verfügbarkeit</h1>
+        <p className="text-slate-500 text-sm mt-0.5">Abwesenheiten, Ausnahmen &amp; Dienstpräferenzen</p>
+      </div>
+
+      {/* ── Section 1: Abwesenheiten ── */}
+      <div className="glass rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-slate-800 text-sm font-semibold">Abwesenheiten</p>
+            <p className="text-slate-500 text-xs mt-0.5">Wer ist wann nicht verfügbar?</p>
+          </div>
+          {onChange && (
+            <button onClick={()=>{setAbsForm({personId:'',from:'',to:'',reason:''});setAbsModal(true);}} disabled={visPersonen.length===0}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+              <SI p={IC.plus} size={12}/> Abwesenheit
+            </button>
+          )}
+        </div>
+        {currentAbw.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Abwesenheiten erfasst</p>}
+        {currentAbw.map(a => {
+          const person = ma.personen.find(p=>p.id===a.personId);
+          if (!person) return null;
+          return (
+            <div key={a.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(245,158,11,0.06)',border:'1px solid rgba(245,158,11,0.18)'}}>
+              <Avatar name={person.name} farbe={person.farbe} size={26}/>
+              <div className="flex-1 min-w-0">
+                <span className="text-slate-700 text-xs font-semibold">{person.name}</span>
+                <div className="text-slate-500 text-xs">{fmtDe(a.from)}{a.to && a.to!==a.from ? ' – '+fmtDe(a.to) : ''}</div>
+                {a.reason && <div className="text-slate-400 text-xs truncate">{a.reason}</div>}
+              </div>
+              {(onChangeMa||onChange) && <button onClick={()=>{const upd=onChangeMa||onChange;upd(m=>({...m,abwesenheiten:(m.abwesenheiten||[]).filter(x=>x.id!==a.id)}));}}
+                className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Section 2: Ausnahmen (Konflikte) ── */}
+      <div className="glass rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-slate-800 text-sm font-semibold">Ausnahmen</p>
+            <p className="text-slate-500 text-xs mt-0.5">Personen die nie zusammen eingeteilt werden</p>
+          </div>
+          {onChange && (
+            <button onClick={()=>{setKonForm({p1:'',p2:'',note:''});setKonModal(true);}} disabled={visPersonen.length<2}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+              <SI p={IC.plus} size={12}/> Ausnahme
+            </button>
+          )}
+        </div>
+        {visKonflikte.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Ausnahmen definiert</p>}
+        {visKonflikte.map(k => {
+          const pa = ma.personen.find(p=>p.id===k.p1);
+          const pb = ma.personen.find(p=>p.id===k.p2);
+          if (!pa||!pb) return null;
+          return (
+            <div key={k.id} className="flex items-center gap-2 p-2.5 rounded-xl" style={{background:'rgba(239,68,68,0.05)',border:'1px solid rgba(239,68,68,0.12)'}}>
+              <Avatar name={pa.name} farbe={pa.farbe} size={26}/>
+              <span className="text-slate-700 text-xs font-semibold truncate">{pa.name}</span>
+              <span className="text-red-400 text-xs font-bold flex-shrink-0">✕</span>
+              <Avatar name={pb.name} farbe={pb.farbe} size={26}/>
+              <span className="text-slate-700 text-xs font-semibold truncate">{pb.name}</span>
+              {k.note && <span className="text-slate-400 text-xs truncate flex-1">· {k.note}</span>}
+              {onChange && <button onClick={()=>onChange(m=>({...m,konflikte:(m.konflikte||[]).filter(x=>x.id!==k.id)}))}
+                className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Section 3: Dienstpräferenzen ── */}
+      <div className="glass rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-slate-800 text-sm font-semibold">Dienstpräferenzen</p>
+            <p className="text-slate-500 text-xs mt-0.5">Welche Dienste jemand bevorzugt oder vermeidet</p>
+          </div>
+          {onChange && (
+            <button onClick={()=>{setPrefForm({personId:'',dienstId:'',prio:'bevorzugt'});setPrefModal(true);}} disabled={visPersonen.length===0||allDienste.length===0}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 disabled:opacity-40 text-black text-xs font-bold px-3 py-1.5 transition-all" style={{borderRadius:30}}>
+              <SI p={IC.plus} size={12}/> Präferenz
+            </button>
+          )}
+        </div>
+        {visPraef.length===0 && <p className="text-slate-400 text-xs text-center py-2">Keine Präferenzen definiert</p>}
+        {visPraef.map(pf => {
+          const person = ma.personen.find(p=>p.id===pf.personId);
+          const dienst = allDienste.find(d=>d.id===pf.dienstId);
+          if (!person||!dienst) return null;
+          const isBev = pf.prio==='bevorzugt';
+          return (
+            <div key={pf.id} className="flex items-center gap-2 p-2.5 rounded-xl"
+              style={{background:isBev?'rgba(16,185,129,0.05)':'rgba(239,68,68,0.05)',border:`1px solid ${isBev?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.12)'}`}}>
+              <Avatar name={person.name} farbe={person.farbe} size={26}/>
+              <span className="text-slate-700 text-xs font-semibold truncate">{person.name}</span>
+              <span className={`text-xs font-bold flex-shrink-0 ${isBev?'text-emerald-500':'text-red-400'}`}>{isBev?'bevorzugt':'vermeidet'}</span>
+              <span className="pill text-xs flex-shrink-0" style={{background:dienst.grp.farbe+'22',color:dienst.grp.farbe}}>{dienst.name}</span>
+              {pf.note && <span className="text-slate-400 text-xs truncate flex-1">· {pf.note}</span>}
+              {onChange && <button onClick={()=>onChange(m=>({...m,praeferenzen:(m.praeferenzen||[]).filter(x=>x.id!==pf.id)}))}
+                className="flex-shrink-0 text-slate-400 hover:text-red-500 transition-all ml-auto"><SI p={IC.x} size={12}/></button>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Abwesenheit Modal */}
+      {absModal && (
+        <Modal title="Abwesenheit hinzufügen" onClose={()=>setAbsModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person *</label>
+              <select value={absForm.personId} onChange={e=>setAbsForm(f=>({...f,personId:e.target.value}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {visPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Von *</label>
+                <input type="date" value={absForm.from} onChange={e=>setAbsForm(f=>({...f,from:e.target.value}))} className={"w-full "+INP}/>
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs block mb-1.5">Bis</label>
+                <input type="date" value={absForm.to} min={absForm.from} onChange={e=>setAbsForm(f=>({...f,to:e.target.value}))} className={"w-full "+INP}/>
+              </div>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Grund (optional)</label>
+              <input value={absForm.reason} onChange={e=>setAbsForm(f=>({...f,reason:e.target.value}))}
+                placeholder="z. B. Urlaub, krank…" className={"w-full "+INP}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveAbsenz} disabled={!absForm.personId||!absForm.from}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                Speichern
+              </button>
+              <button onClick={()=>setAbsModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Konflikt Modal */}
+      {konModal && (
+        <Modal title="Ausnahme hinzufügen" onClose={()=>setKonModal(false)}>
+          <div className="space-y-4">
+            <p className="text-slate-500 text-xs">Diese zwei Personen werden bei der Auto-Einteilung nie in dieselbe Schicht eingeteilt.</p>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person 1 *</label>
+              <select value={konForm.p1} onChange={e=>setKonForm(f=>({...f,p1:e.target.value,p2:f.p2===e.target.value?'':f.p2}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {visPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person 2 *</label>
+              <select value={konForm.p2} onChange={e=>setKonForm(f=>({...f,p2:e.target.value}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {visPersonen.filter(p=>p.id!==konForm.p1).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Grund (optional)</label>
+              <input value={konForm.note} onChange={e=>setKonForm(f=>({...f,note:e.target.value}))}
+                placeholder="z. B. Geschwister, persönlicher Konflikt…" className={"w-full "+INP}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveKonflikte} disabled={!konForm.p1||!konForm.p2}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                Speichern
+              </button>
+              <button onClick={()=>setKonModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Präferenz Modal */}
+      {prefModal && (
+        <Modal title="Dienstpräferenz hinzufügen" onClose={()=>setPrefModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Person *</label>
+              <select value={prefForm.personId} onChange={e=>setPrefForm(f=>({...f,personId:e.target.value}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {visPersonen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Dienst *</label>
+              <select value={prefForm.dienstId} onChange={e=>setPrefForm(f=>({...f,dienstId:e.target.value}))} className={"w-full "+INP}>
+                <option value="">— auswählen —</option>
+                {allDienste.map(d=><option key={d.id} value={d.id}>{d.name} ({d.grp.name})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-2">Typ *</label>
+              <div className="flex gap-2">
+                {[['bevorzugt','Bevorzugt','#10b981'],['vermeidet','Vermeidet','#ef4444']].map(([val,lbl,col])=>(
+                  <button key={val} type="button" onClick={()=>setPrefForm(f=>({...f,prio:val}))}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all border"
+                    style={prefForm.prio===val?{background:col+'18',color:col,borderColor:col+'44'}:{background:'transparent',color:'#94a3b8',borderColor:'rgba(0,0,0,0.1)'}}>
+                    {val==='bevorzugt'?'👍 ':' 👎 '}{lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Notiz (optional)</label>
+              <input value={prefForm.note||''} onChange={e=>setPrefForm(f=>({...f,note:e.target.value}))}
+                placeholder="z. B. aus gesundheitl. Gründen…" className={"w-full "+INP}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={savePref} disabled={!prefForm.personId||!prefForm.dienstId}
+                className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                Speichern
+              </button>
+              <button onClick={()=>setPrefModal(false)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GRUPPEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => {
@@ -795,9 +886,13 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
   const addDienst = gid => {
     const name = (newDienst[gid]||'').trim();
     if (!name) return;
-    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:[...(g.dienste||[]), { id:genId(), name }] } : g) }));
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:[...(g.dienste||[]), { id:genId(), name, count:1 }] } : g) }));
     setNewDienst(p=>({...p,[gid]:''}));
     toast('Dienst hinzugefügt');
+  };
+
+  const updateDienstCount = (gid, did, count) => {
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).map(d => d.id===did ? {...d, count} : d) } : g) }));
   };
 
   const delDienst = (gid, did) => {
@@ -844,6 +939,16 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
                   {(g.dienste||[]).map(d => (
                     <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
                       <span className="text-slate-700 text-sm flex-1">{d.name}</span>
+                      {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400 text-xs">×</span>
+                          <select value={d.count||1} onChange={e=>updateDienstCount(g.id,d.id,Number(e.target.value))}
+                            className="text-xs bg-transparent border border-black/10 rounded px-1 py-0.5 text-slate-600 w-10">
+                            {[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {d.count > 1 && !onChange && <span className="text-xs text-slate-400">×{d.count}</span>}
                       {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
                     </div>
                   ))}
@@ -1173,7 +1278,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const d = new Date(createForm.datum+'T00:00:00'); d.setDate(d.getDate()+i);
         const datum = d.toISOString().slice(0,10);
         const titel = [createForm.titel.trim(), tag.label].filter(Boolean).join(' – ');
-        const slots = (tag.slots||[]).map(s=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:s.doppelt||false,personId:'',personId2:''}));
+        const slots = (tag.slots||[]).flatMap(s=>{
+          const g2=ma.gruppen.find(x=>x.id===s.gruppeId);
+          const d2=(g2?.dienste||[]).find(x=>x.id===s.dienstId);
+          const cnt=d2?.count||1;
+          return Array.from({length:cnt},()=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:false,personId:'',personId2:''}));
+        });
         return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false,planId:selPlanId==='all'?'':selPlanId};
       });
       onChange(m=>({...m,schichten:[...m.schichten,...newSchichten]}));
@@ -1181,7 +1291,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       setModal(null); toast(`${newSchichten.length} Schichten erstellt ✓`);
       return;
     }
-    const slots = vorlage ? (vorlage.slots||[]).map(s=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:s.doppelt||false, personId:'', personId2:'' })) : [];
+    const slots = vorlage ? (vorlage.slots||[]).flatMap(s=>{
+      const g2 = ma.gruppen.find(x=>x.id===s.gruppeId);
+      const d2 = (g2?.dienste||[]).find(x=>x.id===s.dienstId);
+      const cnt = d2?.count||1;
+      return Array.from({length:cnt},()=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:false, personId:'', personId2:'' }));
+    }) : [];
     const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId };
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
@@ -1221,9 +1336,17 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const assignPerson = (slotId, personId, isSecond) => {
     if (!selSchicht) return;
     const field = isSecond ? 'personId2' : 'personId';
-    updateSchicht(selSchicht.id, s => ({
-      ...s, slots: s.slots.map(sl => sl.id===slotId ? { ...sl, [field]: sl[field]===personId?'':personId } : sl)
-    }));
+    updateSchicht(selSchicht.id, s => {
+      const newSlots = s.slots.map(sl => sl.id===slotId ? { ...sl, [field]: sl[field]===personId?'':personId } : sl);
+      // Recompute doppelt: a slot is doppelt if that person has another slot on the same day
+      const finalSlots = newSlots.map(sl => {
+        const pid = sl.personId;
+        if (!pid) return { ...sl, doppelt: false };
+        const otherSlotSameDay = newSlots.some(other => other.id !== sl.id && (other.personId === pid || other.personId2 === pid));
+        return { ...sl, doppelt: otherSlotSameDay };
+      });
+      return { ...s, slots: finalSlots };
+    });
     setModal('detail_view');
   };
 
@@ -1688,6 +1811,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           const wJa  = slotWishes.filter(w=>w.art==='wunschdienst').length;
           const wNein= slotWishes.filter(w=>w.art==='wunschfrei').length;
 
+          const dienstCount = d?.count || 1;
+          const filledCount = selSchicht.slots.filter(other => other.dienstId===sl.dienstId && other.gruppeId===sl.gruppeId && other.personId).length;
+          const totalCount  = selSchicht.slots.filter(other => other.dienstId===sl.dienstId && other.gruppeId===sl.gruppeId).length;
           return (
             <div key={sl.id} className="glass rounded-2xl p-3">
               <div className="flex items-center gap-2 mb-2">
@@ -1696,6 +1822,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <span className="text-slate-700 text-xs">›</span>
                 <span className="text-xs font-semibold text-slate-700">{d?.name||'?'}</span>
                 {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Doppeldienst</span>}
+                {totalCount > 1 && <span className="pill text-xs" style={{background:'rgba(99,102,241,0.1)',color:'#818cf8'}}>{filledCount}/{totalCount} besetzt</span>}
                 {wJa>0  && <span className="pill text-xs" style={{background:'rgba(16,185,129,0.1)',color:'#10b981'}}>👍 {wJa}</span>}
                 {wNein>0 && <span className="pill text-xs" style={{background:'rgba(239,68,68,0.08)',color:'#ef4444'}}>👎 {wNein}</span>}
                 {wCount>0&&wJa===0&&wNein===0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
@@ -1786,6 +1913,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                     style={{background:'rgba(16,185,129,0.15)',color:'#10b981'}}>Annehmen</button>}
                   {isOwn && <button onClick={()=>cancelTausch(r)}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-slate-500 hover:text-red-400">Zurückziehen</button>}
+                  {!isOwn && onChange && <button onClick={()=>cancelTausch(r)} title="Anfrage löschen (Admin)"
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/5 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all"><SI p={IC.trash} size={11}/></button>}
                 </div>
               );
             })}
@@ -1823,6 +1952,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const d = (g?.dienste||[]).find(x=>x.id===selSlot.dienstId);
         const eligible = ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(selSlot.gruppeId));
         const cur = selSlot.isSecond ? selSlot.personId2 : selSlot.personId;
+        const schichtDatum = selSchicht.datum;
         return (
           <Modal title={`Zuweisen: ${d?.name||'?'}`} onClose={() => setModal(null)}>
             <div className="space-y-1.5">
@@ -1830,13 +1960,17 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               {eligible.map(p => {
                 const sel = cur===p.id;
                 const wish = (selSchicht.wuensche||[]).find(w=>w.personId===p.id&&w.slotId===selSlot.id);
+                const isAbsent = (ma.abwesenheiten||[]).some(a => a.personId===p.id && schichtDatum>=a.from && schichtDatum<=(a.to||a.from));
                 return (
                   <button key={p.id} onClick={() => assignPerson(selSlot.id,p.id,selSlot.isSecond)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all"
                     style={sel?{background:p.farbe+'30',border:`1px solid ${p.farbe}55`}:{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.08)'}}>
                     <Avatar name={p.name} farbe={p.farbe} size={34}/>
                     <div className="flex-1 text-left">
-                      <div className="font-semibold text-sm" style={{color:sel?p.farbe:'#e2e8f0'}}>{p.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-sm" style={{color:sel?p.farbe:'#e2e8f0'}}>{p.name}</span>
+                        {isAbsent && <span title="Abwesenheit eingetragen" className="text-xs font-bold text-amber-400">⚠ abwesend</span>}
+                      </div>
                       {wish&&<div className="text-xs" style={{color:wish.art==='wunschdienst'?'#10b981':'#ef4444'}}>{wish.art==='wunschdienst'?'✓ Wunschdienst':'✕ Wunschfrei'}</div>}
                     </div>
                     {sel&&<SI p={IC.check} size={14} stroke={3}/>}
@@ -2173,7 +2307,7 @@ const GesamtDienstplanView = ({ profiles }) => {
 
   if (loading) return (
     <div className="up space-y-5">
-      <div><h1 className="text-xl font-bold" style={{color:'#334155'}}>∑ Gesamt</h1><p className="text-slate-500 text-sm mt-0.5">Lade Dienstpläne aus allen Bereichen…</p></div>
+      <div><h1 className="text-xl font-bold" style={{color:'#334155'}}>Gesamt</h1><p className="text-slate-500 text-sm mt-0.5">Lade Dienstpläne aus allen Bereichen…</p></div>
       <div className="glass rounded-2xl py-16 text-center"><p className="text-slate-400">Verbinde…</p></div>
     </div>
   );
@@ -2188,7 +2322,7 @@ const GesamtDienstplanView = ({ profiles }) => {
   return (
     <div className="space-y-5 up">
       <div>
-        <h1 className="text-xl font-bold" style={{color:'#334155'}}>∑ Gesamt</h1>
+        <h1 className="text-xl font-bold" style={{color:'#334155'}}>Gesamt</h1>
         <p className="text-slate-500 text-sm mt-0.5">Nächste 4 Wochen — alle Bereiche · {upcoming.length} Schichten</p>
       </div>
 
@@ -3004,8 +3138,8 @@ const App = () => {
         if (snap.metadata.hasPendingWrites) return;
         const data = snap.data()?.data;
         if (data) {
-          const { gruppen=[], vorlagen=[], schichten=[] } = data;
-          const clean = { gruppen, vorlagen, schichten };
+          const { gruppen=[], vorlagen=[], schichten=[], plaene=[], tauschAnfragen=[], abwesenheiten=[] } = data;
+          const clean = { gruppen, vorlagen, schichten, plaene, tauschAnfragen, abwesenheiten };
           localStorage.setItem(localKey, JSON.stringify(clean)); setMa(clean);
         }
         setSyncState('synced');
@@ -3047,7 +3181,7 @@ const App = () => {
   };
 
   // Merged view used by all child components
-  const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[], praeferenzen: sharedMa.praeferenzen||[] };
+  const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[], praeferenzen: sharedMa.praeferenzen||[], abwesenheiten: ma.abwesenheiten||[] };
 
   const abfrageToken = new URLSearchParams(window.location.search).get('abfrage');
   if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
@@ -3059,11 +3193,12 @@ const App = () => {
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },
     ...(p.edit ? [{ id:'personen', label:'Personen', icon:IC.person }] : []),
     ...(canEdit ? [
-      { id:'gruppen',   label:'Gruppen',   icon:IC.users  },
+      { id:'gruppen',      label:'Gruppen',       icon:IC.users    },
       ...(!allowedGroups ? [{ id:'vorlagen', label:'Vorlagen', icon:IC.layers }] : []),
-      { id:'statistik', label:'Statistik', icon:IC.chart  },
+      { id:'verfuegbarkeit', label:'Verfügbarkeit', icon:IC.zap    },
+      { id:'statistik',    label:'Statistik',     icon:IC.chart    },
     ] : []),
-    ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog   }] : []),
+    ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog }] : []),
   ];
 
   return (
@@ -3093,7 +3228,7 @@ const App = () => {
                   color: profile==='__gesamt__' ? '#ffffff' : 'rgba(255,255,255,0.35)',
                   border: profile==='__gesamt__' ? '1px solid #475569' : '1px solid rgba(255,255,255,0.1)',
                 }}>
-                ∑ Gesamt
+                Gesamt
               </button>
             )}
             {visibleProfiles.map(pp => (
@@ -3141,10 +3276,11 @@ const App = () => {
       <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
         {isGesamt && page==='dienstplan' && <GesamtDienstplanView profiles={profiles}/>}
         {!isGesamt && page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} onTausch={currentUser?updateMa:null} toast={toast} allowedGroups={allowedGroups} currentUser={currentUser}/>}
-        {!isGesamt && page==='personen'      && <PersonenView   ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
-        {!isGesamt && page==='gruppen'       && <GruppenView    ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
-        {!isGesamt && page==='vorlagen'      && <VorlagenView   ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
-        {!isGesamt && page==='statistik'     && <StatistikView  ma={fullMa}/>}
+        {!isGesamt && page==='personen'         && <PersonenView       ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
+        {!isGesamt && page==='gruppen'          && <GruppenView        ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
+        {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {!isGesamt && page==='verfuegbarkeit'   && <VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/>}
+        {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
       </main>
     </div>
