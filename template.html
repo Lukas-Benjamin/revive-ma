@@ -938,6 +938,10 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
     toast('Dienst hinzugefügt');
   };
 
+  const updateDienstExtra = (gid, did) => {
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).map(d => d.id===did ? {...d, extra:!d.extra} : d) } : g) }));
+  };
+
   const delDienst = (gid, did) => {
     onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).filter(d=>d.id!==did) } : g) }));
   };
@@ -982,6 +986,13 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
                   {(g.dienste||[]).map(d => (
                     <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
                       <span className="text-slate-700 text-sm flex-1">{d.name}</span>
+                      {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && (
+                        <button onClick={()=>updateDienstExtra(g.id,d.id)} title="Extra-Dienst: kann von Person besetzt werden die bereits dient"
+                          className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${d.extra?'bg-amber-500/20 text-amber-400 border border-amber-500/30':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>
+                          Extra
+                        </button>
+                      )}
+                      {d.extra && !onChange && <span className="text-xs text-amber-400 font-semibold">Extra</span>}
                       {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
                     </div>
                   ))}
@@ -1322,6 +1333,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [dupDate,      setDupDate]     = useState('');
   const [recur,        setRecur]       = useState({ enabled:false, type:'weekly', until:'' });
   const [showConflicts, setShowConflicts] = useState(false);
+  const [exportModal, setExportModal] = useState(false);
   const conflicts = useMemo(() => computeConflicts(ma), [ma]);
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
@@ -1343,6 +1355,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     if (!confirm('Plan löschen? Die Schichten bleiben erhalten (werden zu "Alle" verschoben).')) return;
     onChange(m=>({...m, plaene:(m.plaene||[]).filter(p=>p.id!==id), schichten:m.schichten.map(s=>s.planId===id?{...s,planId:''}:s)}));
     if (selPlanId===id) setSelPlanId('all');
+  };
+
+  const publishAll = () => {
+    if (!confirm('Alle Schichten veröffentlichen?')) return;
+    onChange(m=>({...m, schichten:m.schichten.map(s=>({...s,veroeffentlicht:true}))}));
+    toast('Alle Schichten veröffentlicht ✓');
   };
 
   // ── Tausch helpers ──
@@ -1498,6 +1516,17 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     setModal('detail_view');
   };
 
+  const toggleBestaetigung = (personId, val) => {
+    if (!selSchicht) return;
+    updateSchicht(selSchicht.id, s => {
+      const current = (s.bestaetigt||{})[personId];
+      const newVal = current===val ? null : val;
+      const nb = {...(s.bestaetigt||{})};
+      if(newVal===null) delete nb[personId]; else nb[personId]=newVal;
+      return {...s, bestaetigt:nb};
+    });
+  };
+
   const addSchSlot = () => {
     if (!selSchicht) return;
     const g = ma.gruppen[0]; if (!g) return;
@@ -1536,6 +1565,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         (k.p2===pid && alreadyInShift.has(k.p1))
       );
 
+    const lastServed = {};
+    ma.schichten.filter(s=>s.datum<selSchicht.datum).forEach(s2=>s2.slots.forEach(sl2=>{
+      [sl2.personId,sl2.personId2].filter(Boolean).forEach(pid=>{
+        if(!lastServed[pid]||s2.datum>lastServed[pid]) lastServed[pid]=s2.datum;
+      });
+    }));
+
     const usedNow = new Set();
     const newSlots = selSchicht.slots.map(sl => {
       // Skip slots whose group the user has no access to
@@ -1543,6 +1579,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       const eligible = ma.personen.filter(p => {
         if (!(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(sl.gruppeId)) return false;
         if ((p.dienste||[]).length>0 && !(p.dienste||[]).includes(sl.dienstId)) return false;
+        const isAbsent = (ma.abwesenheiten||[]).some(a=>a.personId===p.id&&selSchicht.datum>=a.from&&selSchicht.datum<=(a.to||a.from));
+        if (isAbsent) return false;
         const w = (selSchicht.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
         return w?.art !== 'wunschfrei';
       });
@@ -1553,7 +1591,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const bevorzugt = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='bevorzugt'));
         const neutral   = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='vermeidet'));
         const vermeidet = eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!neutral.find(x=>x.id===p.id));
-        const byCount = (a,b)=>(counts[a.id]||0)-(counts[b.id]||0);
+        const byCount = (a,b) => {
+          const ca=counts[a.id]||0, cb=counts[b.id]||0;
+          if(ca!==cb) return ca-cb;
+          const la=lastServed[a.id]||'2000-01-01', lb=lastServed[b.id]||'2000-01-01';
+          return la.localeCompare(lb);
+        };
         const pool = [...wunsch,...bevorzugt.sort(byCount),...neutral.sort(byCount),...vermeidet.sort(byCount)];
         if (!pool.length) return '';
         const p = pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
@@ -1572,13 +1615,23 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     ma.personen.forEach(p=>{ counts[p.id]=0; });
     const konflikte = ma.konflikte||[];
     const conflictsWith = (pid, set) => konflikte.some(k=>(k.p1===pid&&set.has(k.p2))||(k.p2===pid&&set.has(k.p1)));
-    const newSchichten = [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>{
+    const sortedForAuto = [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum));
+    const lastServedAll = {};
+    const newSchichten = sortedForAuto.map((s, sIdx)=>{
+      // Build lastServed from schichten processed before this one
+      sortedForAuto.slice(0, sIdx).forEach(s2=>s2.slots.forEach(sl2=>{
+        [sl2.personId,sl2.personId2].filter(Boolean).forEach(pid=>{
+          if(!lastServedAll[pid]||s2.datum>lastServedAll[pid]) lastServedAll[pid]=s2.datum;
+        });
+      }));
       const usedNow = new Set();
       const newSlots = s.slots.map(sl=>{
         if(allowedGroups&&!allowedGroups.includes(sl.gruppeId)) return {...sl};
         const eligible = ma.personen.filter(p=>{
           if(!(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).includes(sl.gruppeId)) return false;
           if((p.dienste||[]).length>0&&!(p.dienste||[]).includes(sl.dienstId)) return false;
+          const isAbsent=(ma.abwesenheiten||[]).some(a=>a.personId===p.id&&s.datum>=a.from&&s.datum<=(a.to||a.from));
+          if(isAbsent) return false;
           const w=(s.wuensche||[]).find(x=>x.personId===p.id&&x.slotId===sl.id);
           return w?.art!=='wunschfrei';
         });
@@ -1589,7 +1642,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           const bevorzugt=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='bevorzugt'));
           const neutral=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!praefs.some(pf=>pf.personId===p.id&&pf.dienstId===sl.dienstId&&pf.prio==='vermeidet'));
           const vermeidet=eligible.filter(p=>ok(p)&&!wunsch.find(x=>x.id===p.id)&&!bevorzugt.find(x=>x.id===p.id)&&!neutral.find(x=>x.id===p.id));
-          const byCount=(a,b)=>(counts[a.id]||0)-(counts[b.id]||0);
+          const byCount=(a,b)=>{
+            const ca=counts[a.id]||0, cb=counts[b.id]||0;
+            if(ca!==cb) return ca-cb;
+            const la=lastServedAll[a.id]||'2000-01-01', lb=lastServedAll[b.id]||'2000-01-01';
+            return la.localeCompare(lb);
+          };
           const pool=[...wunsch,...bevorzugt.sort(byCount),...neutral.sort(byCount),...vermeidet.sort(byCount)];
           if(!pool.length) return '';
           const p=pool[0]; counts[p.id]=(counts[p.id]||0)+1; excl.add(p.id); return p.id;
@@ -1695,10 +1753,22 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             📅 Kalender
           </button>
+          {ma.schichten.length>0 && onChange && !allowedGroups && (
+            <button onClick={()=>setExportModal(true)}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+              <SI p={IC.download} size={13}/> Export
+            </button>
+          )}
           {ma.schichten.length>0 && <button onClick={()=>{ setShareScope('all'); setShareText(buildPlanText(ma)); setModal('share'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.send} size={13}/> Teilen
           </button>}
+          {onChange && !allowedGroups && ma.schichten.some(s=>!s.veroeffentlicht) && (
+            <button onClick={publishAll}
+              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
+              ✓ Alle veröff.
+            </button>
+          )}
           {onChange && !allowedGroups && <button onClick={() => { setCreateForm({ datum:today(), titel:'', vorlageId:ma.vorlagen[0]?.id||'' }); setModal('create'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.plus} size={13}/> Schicht
@@ -1887,6 +1957,28 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         </Modal>
       )}
 
+      {exportModal && (
+        <Modal title="Dienstplan exportieren" onClose={()=>setExportModal(false)}>
+          <div className="space-y-3">
+            <p className="text-slate-500 text-xs">{sorted.length} Schichten exportieren</p>
+            <div className="space-y-2">
+              <button onClick={()=>{exportExcelPlan(ma,'dienstplan',null);setExportModal(false);}}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-black/5 hover:bg-black/8 transition-all text-left">
+                <span className="text-lg">📊</span><div><div className="text-sm font-semibold text-slate-800">Excel (.xlsx)</div><div className="text-xs text-slate-500">Alle Schichten als Tabelle</div></div>
+              </button>
+              <button onClick={()=>{exportIcal(ma,null);setExportModal(false);}}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-black/5 hover:bg-black/8 transition-all text-left">
+                <span className="text-lg">📅</span><div><div className="text-sm font-semibold text-slate-800">iCal (.ics)</div><div className="text-xs text-slate-500">Für iOS, Google, Outlook</div></div>
+              </button>
+              <button onClick={()=>{setShareText(buildPlanText(ma,null));setShareScope('all');setModal('share');setExportModal(false);}}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-black/5 hover:bg-black/8 transition-all text-left">
+                <span className="text-lg">💬</span><div><div className="text-sm font-semibold text-slate-800">WhatsApp-Text</div><div className="text-xs text-slate-500">Formatierten Text kopieren</div></div>
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {modal==='create' && (
         <Modal title="Neue Schicht erstellen" onClose={() => setModal(null)}>
           <div className="space-y-4">
@@ -1966,6 +2058,13 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-slate-100 leading-none">{fmtDe(selSchicht.datum)}{selSchicht.titel?' — '+selSchicht.titel:''}</h1>
           <div className="text-slate-500 text-xs mt-0.5">{selSchicht.slots.filter(sl=>sl.personId).length}/{selSchicht.slots.length} Slots besetzt</div>
+          {onChange ? (
+            <input value={selSchicht.notiz||''} onChange={e=>updateSchicht(selSchicht.id,s=>({...s,notiz:e.target.value}))}
+              placeholder="📝 Interne Notiz zur Schicht…"
+              className="mt-1.5 w-full bg-black/5 border border-black/8 rounded-xl px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 outline-none transition-all"/>
+          ) : selSchicht.notiz ? (
+            <div className="mt-1.5 px-3 py-1.5 rounded-xl text-xs text-slate-400" style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)'}}>📝 {selSchicht.notiz}</div>
+          ) : null}
         </div>
       </div>
 
@@ -2038,11 +2137,12 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <span className="text-xs font-semibold text-slate-500">{g?.name||'?'}</span>
                 <span className="text-slate-700 text-xs">›</span>
                 <span className="text-xs font-semibold text-slate-700">{d?.name||'?'}</span>
-                {sl.doppelt && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Doppeldienst</span>}
+                {(()=>{ const g2=ma.gruppen.find(x=>x.id===sl.gruppeId); const d2=(g2?.dienste||[]).find(x=>x.id===sl.dienstId); return (d2?.extra||sl.doppelt) && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.15)',color:'#f59e0b'}}>Extra</span>; })()}
                 {totalCount > 1 && <span className="pill text-xs" style={{background:'rgba(99,102,241,0.1)',color:'#818cf8'}}>{filledCount}/{totalCount} besetzt</span>}
                 {wJa>0  && <span className="pill text-xs" style={{background:'rgba(16,185,129,0.1)',color:'#10b981'}}>👍 {wJa}</span>}
                 {wNein>0 && <span className="pill text-xs" style={{background:'rgba(239,68,68,0.08)',color:'#ef4444'}}>👎 {wNein}</span>}
                 {wCount>0&&wJa===0&&wNein===0 && <span className="pill text-xs" style={{background:'rgba(245,158,11,0.1)',color:'#f59e0b'}}>{wCount} Wünsche</span>}
+                {sl.personId && (()=>{ const b=(selSchicht.bestaetigt||{})[sl.personId]; return b ? <span className="pill text-xs" style={{background:b==='ja'?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.1)',color:b==='ja'?'#10b981':'#ef4444'}}>{b==='ja'?'✓':'✕'}</span> : null; })()}
                 {onChange && <button onClick={() => remSchSlot(sl.id)} className="ml-auto text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={12}/></button>}
               </div>
               <div className="flex gap-2 flex-wrap items-center">
@@ -2055,6 +2155,15 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                     </button>
                   : p1 && <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{background:p1.farbe+'25',color:p1.farbe,border:`1px solid ${p1.farbe}44`}}><Avatar name={p1.name} farbe={p1.farbe} size={16}/>{p1.name}</span>
                 }
+                {p1 && onChange && (()=>{
+                  const b=(selSchicht.bestaetigt||{})[p1.id];
+                  return <div className="flex gap-1">
+                    <button onClick={()=>toggleBestaetigung(p1.id,'ja')} title="Bestätigt"
+                      className={`w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${b==='ja'?'bg-emerald-500/20 text-emerald-400':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>✓</button>
+                    <button onClick={()=>toggleBestaetigung(p1.id,'nein')} title="Abgelehnt"
+                      className={`w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${b==='nein'?'bg-red-500/20 text-red-400':'bg-black/5 text-slate-500 hover:bg-black/8'}`}>✕</button>
+                  </div>;
+                })()}
                 {/* Tausch buttons — shown when myPerson is assigned to this slot */}
                 {onTausch && myPerson && sl.personId===myPerson.id && !(ma.tauschAnfragen||[]).some(r=>r.slotId===sl.id&&!r.isSecond) && (
                   <button onClick={()=>{setTauschSlot({slotId:sl.id,isSecond:false});setTauschNote('');setModal('tausch');}}
@@ -2069,31 +2178,6 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         })}
       </div>
 
-      {/* Wünsche Section — nur für Admin */}
-      {onChange && selSchicht.slots.length>0 && (
-        <div className="glass rounded-2xl p-4">
-          <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Wünsche bearbeiten</div>
-          <div className="flex flex-wrap gap-2">
-            {ma.personen.filter(p => { const gids=p.gruppenIds||(p.gruppeId?[p.gruppeId]:[]);return ma.gruppen.some(g=>gids.includes(g.id)&&selSchicht.slots.some(sl=>sl.gruppeId===g.id)); }).map(p => {
-              const myWishes = (selSchicht.wuensche||[]).filter(w=>w.personId===p.id);
-              return (
-                <button key={p.id} onClick={() => {
-                    setWishPid(p.id);
-                    const wm={};
-                    myWishes.forEach(w=>wm[w.slotId]=w.art);
-                    setWishForm(wm); setModal('wish');
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all"
-                  style={{background:'rgba(0,0,0,0.04)',border:'1px solid rgba(0,0,0,0.08)',color:'#64748b'}}>
-                  <Avatar name={p.name} farbe={p.farbe} size={18}/>
-                  {p.name}
-                  {myWishes.length>0&&<span style={{color:'#f59e0b',fontSize:10}}>({myWishes.length})</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Tausch-Anfragen Section */}
       {onTausch && (() => {
@@ -2588,6 +2672,11 @@ const StatistikView = ({ ma, canEdit }) => {
 const GesamtDienstplanView = ({ profiles }) => {
   const [allSchichten, setAllSchichten] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [gFrom, setGFrom] = useState(() => new Date().toISOString().slice(0,10));
+  const [gTo,   setGTo]   = useState(() => { const d=new Date(); d.setDate(d.getDate()+28); return d.toISOString().slice(0,10); });
+  const [gProfs, setGProfs] = useState([]);
+
+  const toggleGProf = id => setGProfs(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
 
   useEffect(() => {
     setLoading(true);
@@ -2605,14 +2694,11 @@ const GesamtDienstplanView = ({ profiles }) => {
       .catch(() => setLoading(false));
   }, [profiles.map(p=>p.id).join(',')]);
 
-  const now = today();
-  const fourWeeksLater = new Date(Date.now() + 28 * 86400000).toISOString().split('T')[0];
-
   const upcoming = useMemo(() => {
-    return allSchichten
-      .filter(s => s.datum >= now && s.datum <= fourWeeksLater)
-      .sort((a,b) => a.datum.localeCompare(b.datum));
-  }, [allSchichten, now]);
+    let list = allSchichten.filter(s=>s.datum>=gFrom&&s.datum<=gTo);
+    if(gProfs.length>0) list=list.filter(s=>gProfs.includes(s.profileId));
+    return list.sort((a,b)=>a.datum.localeCompare(b.datum));
+  }, [allSchichten,gFrom,gTo,gProfs]);
 
   if (loading) return (
     <div className="up space-y-5">
@@ -2632,7 +2718,7 @@ const GesamtDienstplanView = ({ profiles }) => {
     <div className="space-y-5 up">
       <div>
         <h1 className="text-xl font-bold" style={{color:'#334155'}}>Gesamt</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Nächste 4 Wochen — alle Bereiche · {upcoming.length} Schichten</p>
+        <p className="text-slate-500 text-sm mt-0.5">{upcoming.length} Schichten · alle Bereiche</p>
       </div>
 
       {/* Legend */}
@@ -2643,6 +2729,22 @@ const GesamtDienstplanView = ({ profiles }) => {
             {pp.label}
           </span>
         ))}
+      </div>
+
+      {/* Filter row */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <input type="date" value={gFrom} onChange={e=>setGFrom(e.target.value)} className="bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none"/>
+        <span className="text-slate-400 text-xs">–</span>
+        <input type="date" value={gTo} onChange={e=>setGTo(e.target.value)} className="bg-black/5 border border-black/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none"/>
+        <div className="flex gap-1.5 flex-wrap">
+          {profiles.map(pp=>(
+            <button key={pp.id} onClick={()=>toggleGProf(pp.id)}
+              className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+              style={{background:gProfs.includes(pp.id)?pp.color+'25':'rgba(0,0,0,0.05)',border:`1px solid ${gProfs.includes(pp.id)?pp.color+'60':'rgba(0,0,0,0.08)'}`,color:gProfs.includes(pp.id)?pp.color:'#64748b'}}>
+              {pp.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {Object.keys(byDate).length === 0 ? (
@@ -3352,6 +3454,9 @@ const App = () => {
   });
   const [profiles,   setProfiles]   = useState(DEFAULT_PROFILES);
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
+  const [headerEdit,      setHeaderEdit]      = useState(null);
+  const [headerEditName,  setHeaderEditName]  = useState('');
+  const [headerEditColor, setHeaderEditColor] = useState('#06b6d4');
   const [ma,        setMa]        = useState(() => loadJSON(`ma-data-${localStorage.getItem('ma-profile')||'revive'}`, DEFAULT_MA()));
   const [sharedMa,  setSharedMa]  = useState(() => loadJSON('ma-data-shared', DEFAULT_SHARED()));
   const [page,      setPage]      = useState('dienstplan');
@@ -3399,6 +3504,21 @@ const App = () => {
   const login  = user => { setCurrentUser(user); localStorage.setItem('k21-user', user ? JSON.stringify(user) : 'guest'); };
   const logout = () => { setCurrentUser(undefined); localStorage.removeItem('k21-user'); setPage('dienstplan'); };
   const updateCurrentUser = user => { setCurrentUser(user); localStorage.setItem('k21-user', JSON.stringify(user)); };
+
+  const saveHeaderEdit = () => {
+    if (!headerEditName.trim()) return;
+    let np;
+    if (headerEdit==='new') {
+      const id=headerEditName.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')+'-'+Math.random().toString(36).slice(2,5);
+      np=[...profiles,{id,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#334155)`}];
+    } else {
+      np=profiles.map(p=>p.id===headerEdit?{...p,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#334155)`}:p);
+    }
+    setProfiles(np); PROFILES=np;
+    db.collection('config').doc('profiles').set({data:np}).catch(()=>{});
+    setHeaderEdit(null);
+    toast(headerEdit==='new'?'Bereich erstellt ✓':'Bereich umbenannt ✓');
+  };
 
   // Which church profiles this user may see
   const visibleProfiles = useMemo(() => {
@@ -3541,17 +3661,35 @@ const App = () => {
               </button>
             )}
             {visibleProfiles.map(pp => (
-              <button key={pp.id} onClick={() => switchProfile(pp.id)}
-                className="px-3.5 py-1.5 text-xs font-bold transition-all"
-                style={{
-                  borderRadius: 30,
-                  background: profile===pp.id ? '#ffffff' : 'transparent',
-                  color: profile===pp.id ? '#000000' : 'rgba(255,255,255,0.4)',
-                  border: profile===pp.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.12)',
-                }}>
-                {pp.label}
-              </button>
+              <div key={pp.id} className="relative flex items-center gap-0.5">
+                <button onClick={() => switchProfile(pp.id)}
+                  className="px-3.5 py-1.5 text-xs font-bold transition-all"
+                  style={{
+                    borderRadius: 30,
+                    background: profile===pp.id ? '#ffffff' : 'transparent',
+                    color: profile===pp.id ? '#000000' : 'rgba(255,255,255,0.4)',
+                    border: profile===pp.id ? '1px solid transparent' : '1px solid rgba(255,255,255,0.12)',
+                  }}>
+                  {pp.label}
+                </button>
+                {isAdmin && (
+                  <button onClick={()=>{setHeaderEdit(pp.id);setHeaderEditName(pp.label);setHeaderEditColor(pp.color||'#06b6d4');}}
+                    title="Bereich umbenennen"
+                    className="w-5 h-5 flex items-center justify-center rounded-full transition-all opacity-40 hover:opacity-100"
+                    style={{color:'rgba(255,255,255,0.7)'}}>
+                    <SI p={IC.edit} size={12}/>
+                  </button>
+                )}
+              </div>
             ))}
+            {isAdmin && (
+              <button onClick={()=>{setHeaderEdit('new');setHeaderEditName('');setHeaderEditColor('#06b6d4');}}
+                title="Neuer Bereich"
+                className="w-7 h-7 flex items-center justify-center rounded-full transition-all opacity-50 hover:opacity-100"
+                style={{color:'rgba(255,255,255,0.7)',border:'1px dashed rgba(255,255,255,0.3)'}}>
+                <SI p={IC.plus} size={13}/>
+              </button>
+            )}
           </div>
 
           {/* Right: sync + role + logout */}
@@ -3592,6 +3730,26 @@ const App = () => {
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
       </main>
+      {headerEdit && (
+        <Modal title={headerEdit==='new'?'Neuer Bereich':'Bereich umbenennen'} onClose={()=>setHeaderEdit(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Name</label>
+              <input autoFocus value={headerEditName} onChange={e=>setHeaderEditName(e.target.value)}
+                placeholder="Bereich-Name…" className={"w-full "+INP}
+                onKeyDown={e=>e.key==='Enter'&&saveHeaderEdit()}/>
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs block mb-1.5">Farbe</label>
+              <ColorPicker value={headerEditColor} onChange={setHeaderEditColor}/>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={saveHeaderEdit} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
+              <button onClick={()=>setHeaderEdit(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
