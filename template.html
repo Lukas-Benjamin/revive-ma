@@ -938,10 +938,6 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
     toast('Dienst hinzugefügt');
   };
 
-  const updateDienstCount = (gid, did, count) => {
-    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).map(d => d.id===did ? {...d, count} : d) } : g) }));
-  };
-
   const delDienst = (gid, did) => {
     onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:(g.dienste||[]).filter(d=>d.id!==did) } : g) }));
   };
@@ -986,16 +982,6 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
                   {(g.dienste||[]).map(d => (
                     <div key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{background:'rgba(0,0,0,0.03)',border:'1px solid rgba(0,0,0,0.07)'}}>
                       <span className="text-slate-700 text-sm flex-1">{d.name}</span>
-                      {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400 text-xs">×</span>
-                          <select value={d.count||1} onChange={e=>updateDienstCount(g.id,d.id,Number(e.target.value))}
-                            className="text-xs bg-transparent border border-black/10 rounded px-1 py-0.5 text-slate-600 w-10">
-                            {[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      {d.count > 1 && !onChange && <span className="text-xs text-slate-400">×{d.count}</span>}
                       {onChange && (!allowedGroups||allowedGroups.includes(g.id)) && <button onClick={() => delDienst(g.id,d.id)} className="text-slate-700 hover:text-red-400 transition-all"><SI p={IC.x} size={11}/></button>}
                     </div>
                   ))}
@@ -1059,7 +1045,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
   };
 
   // ── Einzel slot helpers ──
-  const mkSlot = () => { const g=ma.gruppen[0]; if(!g)return null; const d=(g.dienste||[])[0]; return {id:genId(),gruppeId:g.id,dienstId:d?.id||'',doppelt:false}; };
+  const mkSlot = () => { const g=ma.gruppen[0]; if(!g)return null; const d=(g.dienste||[])[0]; return {id:genId(),gruppeId:g.id,dienstId:d?.id||'',count:1}; };
   const addSlot    = () => { const s=mkSlot(); if(s) setForm(f=>({...f,slots:[...f.slots,s]})); };
   const updSlot    = (sid,k,v) => setForm(f=>({...f,slots:f.slots.map(s=>s.id===sid?{...s,[k]:v}:s)}));
   const remSlot    = sid => setForm(f=>({...f,slots:f.slots.filter(s=>s.id!==sid)}));
@@ -1083,7 +1069,13 @@ const VorlagenView = ({ ma, onChange, toast }) => {
           <option value="">— Dienst —</option>
           {(g?.dienste||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <button type="button" onClick={()=>onUpd(s.id,'doppelt',!s.doppelt)} className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all ${s.doppelt?'bg-amber-600/30 text-amber-400':'bg-black/5 text-slate-600'}`}>×2</button>
+        <div className="flex items-center gap-1 flex-shrink-0" title="Wie viele Personen werden für diesen Dienst benötigt?">
+          <span className="text-slate-400 text-xs">×</span>
+          <select value={s.count||1} onChange={e=>onUpd(s.id,'count',Number(e.target.value))}
+            className="text-xs bg-black/5 border border-black/10 rounded-lg px-1.5 py-1 text-slate-700 w-10">
+            {[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
         <button type="button" onClick={()=>onRem(s.id)} className="text-slate-600 hover:text-red-400 transition-all"><SI p={IC.x} size={13}/></button>
       </div>
     );
@@ -1149,13 +1141,13 @@ const VorlagenView = ({ ma, onChange, toast }) => {
                   {(v.tage||[]).map(tag=>(
                     <div key={tag.id} className="flex gap-2 items-start">
                       <span className="text-slate-500 text-xs w-12 pt-0.5 flex-shrink-0">{tag.label}</span>
-                      <div className="flex flex-wrap gap-1">{(tag.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>;})}</div>
+                      <div className="flex flex-wrap gap-1">{(tag.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{(s.count||1)>1?` ×${s.count}`:''}</span>;})}</div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
-                  {(v.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{s.doppelt?' ×2':''}</span>; })}
+                  {(v.slots||[]).map(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return <span key={s.id} className="pill" style={{background:(g?.farbe||'#8b5cf6')+'22',color:g?.farbe||'#8b5cf6'}}>{d?.name||'?'}{(s.count||1)>1?` ×${s.count}`:''}</span>; })}
                 </div>
               )}
             </div>
@@ -1428,9 +1420,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const datum = d.toISOString().slice(0,10);
         const titel = [createForm.titel.trim(), tag.label].filter(Boolean).join(' – ');
         const slots = (tag.slots||[]).flatMap(s=>{
-          const g2=ma.gruppen.find(x=>x.id===s.gruppeId);
-          const d2=(g2?.dienste||[]).find(x=>x.id===s.dienstId);
-          const cnt=d2?.count||1;
+          const cnt = s.count || 1;
           return Array.from({length:cnt},()=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:false,personId:'',personId2:''}));
         });
         return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false,planId:selPlanId==='all'?'':selPlanId};
@@ -1441,9 +1431,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       return;
     }
     const slots = vorlage ? (vorlage.slots||[]).flatMap(s=>{
-      const g2 = ma.gruppen.find(x=>x.id===s.gruppeId);
-      const d2 = (g2?.dienste||[]).find(x=>x.id===s.dienstId);
-      const cnt = d2?.count||1;
+      const cnt = s.count || 1;
       return Array.from({length:cnt},()=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:false, personId:'', personId2:'' }));
     }) : [];
     const recurringMeta = recur.enabled && recur.until ? { type:recur.type, until:recur.until } : undefined;
