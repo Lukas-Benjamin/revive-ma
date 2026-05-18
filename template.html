@@ -1753,12 +1753,6 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           <button onClick={()=>setListView('calendar')} className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             📅 Kalender
           </button>
-          {ma.schichten.length>0 && onChange && !allowedGroups && (
-            <button onClick={()=>setExportModal(true)}
-              className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
-              <SI p={IC.download} size={13}/> Export
-            </button>
-          )}
           {ma.schichten.length>0 && <button onClick={()=>{ setShareScope('all'); setShareText(buildPlanText(ma)); setModal('share'); }}
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.send} size={13}/> Teilen
@@ -2680,18 +2674,20 @@ const GesamtDienstplanView = ({ profiles }) => {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all(profiles.map(p => db.collection(p.id).doc('ma').get()))
-      .then(snaps => {
-        const merged = [];
-        snaps.forEach((snap, i) => {
+    const merged = [];
+    let done = 0;
+    profiles.forEach(p => {
+      db.collection(p.id).doc('ma').get()
+        .then(snap => {
           const data = snap.data()?.data;
           const schichten = data?.schichten || [];
-          schichten.forEach(s => merged.push({ ...s, profileId: profiles[i].id, profileLabel: profiles[i].label, profileColor: profiles[i].color }));
-        });
-        setAllSchichten(merged);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+          schichten.forEach(s => merged.push({ ...s, profileId: p.id, profileLabel: p.label, profileColor: p.color }));
+          setAllSchichten([...merged]);
+          done++;
+          if (done === profiles.length) setLoading(false);
+        })
+        .catch(() => { done++; if (done === profiles.length) setLoading(false); });
+    });
   }, [profiles.map(p=>p.id).join(',')]);
 
   const upcoming = useMemo(() => {
@@ -3272,7 +3268,6 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
             <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:22,color:'#ffffff',letterSpacing:'-1px'}}>K21</span>
           </div>
           <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#0f172a',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
-          <p className="text-slate-500 text-sm mt-2 tracking-wide">Wunstorf · Schaumburg · Revive</p>
         </div>
 
         <div className="glass rounded-2xl glow" style={{overflow:'visible'}}>
@@ -3331,12 +3326,18 @@ const AbfrageForm = ({ token }) => {
 
   useEffect(() => {
     const search = async () => {
-      for (const pr of PROFILES) {
+      let activeProfiles = PROFILES;
+      try {
+        const cfgSnap = await db.collection('config').doc('profiles').get();
+        const cfgData = cfgSnap.data()?.data;
+        if (cfgData && cfgData.length) activeProfiles = cfgData;
+      } catch {}
+      for (const pr of activeProfiles) {
         try {
           const snap = await db.collection(pr.id).doc('ma').get();
           const d = snap.data();
           const s = (d?.schichten||[]).find(s=>s.abfrageToken===token);
-          if (s) { setSchicht(s); setMaData(d); return; }
+          if (s) { setSchicht(s); setMaData(d); setPid(''); return; }
         } catch {}
       }
       setErr('Abfrage nicht gefunden oder bereits abgelaufen.');
@@ -3347,7 +3348,13 @@ const AbfrageForm = ({ token }) => {
   const submit = async () => {
     if (!pid) return;
     const wishes = Object.entries(form).filter(([,v])=>v&&v!=='neutral').map(([slotId,art])=>({personId:pid,slotId,art}));
-    for (const pr of PROFILES) {
+    let activeProfiles = PROFILES;
+    try {
+      const cfgSnap = await db.collection('config').doc('profiles').get();
+      const cfgData = cfgSnap.data()?.data;
+      if (cfgData && cfgData.length) activeProfiles = cfgData;
+    } catch {}
+    for (const pr of activeProfiles) {
       try {
         const snap = await db.collection(pr.id).doc('ma').get();
         const d = snap.data();
@@ -3747,6 +3754,18 @@ const App = () => {
               <button onClick={saveHeaderEdit} className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm" style={{borderRadius:30}}>Speichern</button>
               <button onClick={()=>setHeaderEdit(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
+            {headerEdit!=='new' && (
+              <button onClick={()=>{
+                if (!window.confirm('Bereich wirklich löschen? Alle Daten dieses Bereichs bleiben in Firebase erhalten.')) return;
+                const np = profiles.filter(p=>p.id!==headerEdit);
+                setProfiles(np); PROFILES=np;
+                db.collection('config').doc('profiles').set({data:np}).catch(()=>{});
+                setHeaderEdit(null);
+                toast('Bereich gelöscht ✓');
+              }} className="w-full py-2 text-red-400 hover:text-red-600 text-xs font-medium transition-all text-center" style={{borderRadius:30}}>
+                Bereich löschen
+              </button>
+            )}
           </div>
         </Modal>
       )}
