@@ -1338,10 +1338,19 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const [calYM,        setCalYM]       = useState(() => { const n=new Date(); return {y:n.getFullYear(),m:n.getMonth()}; });
   const [dupModal,     setDupModal]    = useState(null); // schicht to duplicate
   const [dupDate,      setDupDate]     = useState('');
+  const dupDateRef = useRef(null);
   const [recur,        setRecur]       = useState({ enabled:false, type:'weekly', until:'' });
   const [showConflicts, setShowConflicts] = useState(false);
   const [exportModal, setExportModal] = useState(false);
   const conflicts = useMemo(() => computeConflicts(ma), [ma]);
+
+  // Auto-open date picker when dup modal appears
+  useEffect(() => {
+    if (dupModal && dupDateRef.current) {
+      dupDateRef.current.focus();
+      try { dupDateRef.current.showPicker(); } catch {}
+    }
+  }, [dupModal]);
 
   const selSchicht = useMemo(() => ma.schichten.find(s=>s.id===selSchichtId)||null, [ma.schichten, selSchichtId]);
   const sorted     = useMemo(() => {
@@ -1929,7 +1938,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             <p className="text-slate-500 text-xs">Slots werden übernommen, Einteilungen werden zurückgesetzt.</p>
             <div>
               <label className="text-slate-400 text-xs block mb-1.5">Neues Datum *</label>
-              <input type="date" value={dupDate} onChange={e=>setDupDate(e.target.value)} className={"w-full "+INP} autoFocus/>
+              <input type="date" ref={dupDateRef} value={dupDate} onChange={e=>setDupDate(e.target.value)} className={"w-full "+INP}/>
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={dupSchicht} disabled={!dupDate}
@@ -2057,14 +2066,14 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
           <SI p={IC.chevLeft} size={16}/>
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold text-slate-100 leading-none">{fmtDe(selSchicht.datum)}{selSchicht.titel?' — '+selSchicht.titel:''}</h1>
+          <h1 className="text-lg font-bold text-slate-900 leading-none">{fmtDe(selSchicht.datum)}{selSchicht.titel?' — '+selSchicht.titel:''}</h1>
           <div className="text-slate-500 text-xs mt-0.5">{selSchicht.slots.filter(sl=>sl.personId).length}/{selSchicht.slots.length} Slots besetzt</div>
           {onChange ? (
             <input value={selSchicht.notiz||''} onChange={e=>updateSchicht(selSchicht.id,s=>({...s,notiz:e.target.value}))}
               placeholder="📝 Interne Notiz zur Schicht…"
-              className="mt-1.5 w-full bg-black/5 border border-black/8 rounded-xl px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 outline-none transition-all"/>
+              className="mt-1.5 w-full bg-black/5 border border-black/10 rounded-xl px-3 py-1.5 text-xs text-slate-700 placeholder-slate-400 outline-none transition-all"/>
           ) : selSchicht.notiz ? (
-            <div className="mt-1.5 px-3 py-1.5 rounded-xl text-xs text-slate-400" style={{background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)'}}>📝 {selSchicht.notiz}</div>
+            <div className="mt-1.5 px-3 py-1.5 rounded-xl text-xs text-slate-600" style={{background:'rgba(0,0,0,0.04)',border:'1px solid rgba(0,0,0,0.08)'}}>📝 {selSchicht.notiz}</div>
           ) : null}
         </div>
       </div>
@@ -2361,7 +2370,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <SI p={IC.download} size={18} stroke={1.8}/>
                 <span className="text-xs font-bold">Excel</span>
               </button>
-              <button onClick={()=>navigator.clipboard?.writeText(shareText).then(()=>toast('Kopiert! 📋')).catch(()=>alert(shareText))}
+              <button onClick={async()=>{ try{await navigator.clipboard.writeText(shareText);toast('Kopiert! 📋');}catch{if(navigator.share)await navigator.share({text:shareText}).catch(()=>{});else alert(shareText);} }}
                 className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
                 style={{background:'rgba(59,130,246,0.06)',borderColor:'rgba(59,130,246,0.2)',color:'#2563eb'}}>
                 <SI p={IC.copy} size={18} stroke={1.8}/>
@@ -2374,12 +2383,18 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <span className="text-xs font-bold">iCal</span>
               </button>
               <button onClick={()=>{
-                const w=window.open('','_blank','width=800,height=600');
                 const rows = shareScope==='single'&&selSchicht
                   ? selSchicht.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')
                   : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>`<tr><td colspan="4" style="background:#f1f5f9;font-weight:700;padding:10px 12px">${fmtDe(s.datum)}${s.titel?' — '+s.titel:''}</td></tr>`+s.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')).join('');
-                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#000000}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#000000;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`);
-                w.document.close();
+                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#000000}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#000000;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`;
+                const w = window.open('','_blank','width=800,height=600');
+                if (w) { w.document.write(html); w.document.close(); }
+                else {
+                  // Popup blocked → use Blob download fallback
+                  const blob = new Blob([html], {type:'text/html'});
+                  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                  a.download = 'dienstplan.html'; a.click();
+                }
               }}
                 className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
                 style={{background:'rgba(100,116,139,0.06)',borderColor:'rgba(100,116,139,0.2)',color:'#475569'}}>
@@ -3258,7 +3273,7 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
       return;
     }
     const u = users.find(x=>x.name.toLowerCase()===n.toLowerCase());
-    if (u&&u.pin===pin) {
+    if (u&&String(u.pin)===String(pin)) {
       onLogin({id:u.id,name:u.name,role:u.role||'viewer',permissions:perms(u),areaAccess:u.areaAccess||{},areaGroups:u.areaGroups||{},areas:u.areas||[]});
     } else {
       setErr('Name oder PIN nicht korrekt');
@@ -3353,6 +3368,10 @@ const AbfrageForm = ({ token }) => {
   const submit = async () => {
     if (!pid) return;
     const wishes = Object.entries(form).filter(([,v])=>v&&v!=='neutral').map(([slotId,art])=>({personId:pid,slotId,art}));
+    // Check if person said "wunschfrei" for ALL slots → record as abwesenheit
+    const allEntries = Object.values(form).filter(v=>v&&v!=='neutral');
+    const hasYes  = allEntries.some(v=>v==='wunschdienst');
+    const hasNo   = allEntries.some(v=>v==='wunschfrei');
     let activeProfiles = PROFILES;
     try {
       const cfgSnap = await db.collection('config').doc('profiles').get();
@@ -3364,11 +3383,24 @@ const AbfrageForm = ({ token }) => {
         const snap = await db.collection(pr.id).doc('ma').get();
         const d = snap.data();
         if (!(d?.schichten||[]).find(s=>s.abfrageToken===token)) continue;
+        // 1. Update wuensche in schicht
         const newSchichten = (d.schichten||[]).map(s => {
           if (s.abfrageToken!==token) return s;
           return {...s, wuensche:[...(s.wuensche||[]).filter(w=>w.personId!==pid),...wishes]};
         });
-        await db.collection(pr.id).doc('ma').update({schichten:newSchichten});
+        // 2. If person has NO "ja" entries → add abwesenheit for schicht date
+        let updates = { schichten:newSchichten };
+        if (hasNo && !hasYes && schicht?.datum) {
+          const existingAbw = (d.abwesenheiten||[]).filter(a=>!(a.personId===pid&&a.from===schicht.datum&&a.reason?.startsWith('Abfrage')));
+          const newAbw = { id: Math.random().toString(36).slice(2)+Date.now().toString(36), personId:pid, from:schicht.datum, to:schicht.datum, reason:'Abfrage: '+(schicht.titel||schicht.datum) };
+          updates.abwesenheiten = [...existingAbw, newAbw];
+        } else if (hasYes) {
+          // Remove any previous "abwesend wegen Abfrage" for this date + person
+          const filtered = (d.abwesenheiten||[]).filter(a=>!(a.personId===pid&&a.from===schicht?.datum&&a.reason?.startsWith('Abfrage')));
+          updates.abwesenheiten = filtered;
+        }
+        // 3. Also update shared MA (personen/konflikte/praeferenzen live there)
+        await db.collection(pr.id).doc('ma').update(updates);
         setDone(true); return;
       } catch {}
     }
