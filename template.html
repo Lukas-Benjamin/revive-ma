@@ -22,14 +22,14 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: #f8fafc; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    body { background: #f8fafc; color: #0f172a; font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    body { background: #f8fafc; color: #000000; font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
     .glass { background: #ffffff; border: 1px solid rgba(0,0,0,0.08); }
     .glass-hover:hover { background: #f1f5f9; }
     .glow { box-shadow: 0 4px 32px rgba(0,0,0,0.08); }
-    .grad { color: #0f172a; -webkit-text-fill-color: #0f172a; background: none; font-weight: 900; letter-spacing: -0.03em; }
+    .grad { color: #000000; -webkit-text-fill-color: #000000; background: none; font-weight: 900; letter-spacing: -0.03em; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.3); cursor: pointer; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: rgba(0,0,0,0.25) !important; }
-    select option { background: #ffffff; color: #0f172a; }
+    select option { background: #ffffff; color: #000000; }
     @keyframes up { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeIn { from{opacity:0}to{opacity:1} }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -183,7 +183,7 @@ const DEFAULT_PROFILES = [
   { id:'schaumburg', label:'Schaumburg',  color:'#10b981', grad:'linear-gradient(135deg,#059669,#06b6d4)' },
   { id:'revive',     label:'Revive',      color:'#8b5cf6', grad:'linear-gradient(135deg,#8b5cf6,#ec4899)' },
 ];
-const GESAMT_PROFILE = { id:'__gesamt__', label:'Gesamt', color:'#334155', grad:'linear-gradient(135deg,#0f172a,#334155)' };
+const GESAMT_PROFILE = { id:'__gesamt__', label:'Gesamt', color:'#000000', grad:'linear-gradient(135deg,#000000,#000000)' };
 // PROFILES starts as DEFAULT_PROFILES; App will override from Firebase
 let PROFILES = DEFAULT_PROFILES;
 
@@ -1841,11 +1841,11 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       {/* Plan switcher */}
       {(onChange || (ma.plaene||[]).length>0) && (
         <div className="flex gap-1.5 flex-wrap items-center">
-          <button onClick={()=>setSelPlanId('all')} style={{borderRadius:30,background:selPlanId==='all'?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId==='all'?'#ffffff':'#64748b'}}
+          <button onClick={()=>setSelPlanId('all')} style={{borderRadius:30,background:selPlanId==='all'?'#000000':'rgba(0,0,0,0.05)',color:selPlanId==='all'?'#ffffff':'#64748b'}}
             className="px-3 py-1.5 text-xs font-semibold transition-all">Alle</button>
           {(ma.plaene||[]).map(p=>(
             <div key={p.id} className="flex items-center gap-0.5">
-              <button onClick={()=>setSelPlanId(p.id)} style={{borderRadius:30,background:selPlanId===p.id?'#0f172a':'rgba(0,0,0,0.05)',color:selPlanId===p.id?'#ffffff':'#64748b'}}
+              <button onClick={()=>setSelPlanId(p.id)} style={{borderRadius:30,background:selPlanId===p.id?'#000000':'rgba(0,0,0,0.05)',color:selPlanId===p.id?'#ffffff':'#64748b'}}
                 className="px-3 py-1.5 text-xs font-semibold transition-all">{p.name}</button>
               {onChange && !allowedGroups && selPlanId===p.id && (
                 <button onClick={()=>deletePlan(p.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-red-400 transition-all"><SI p={IC.x} size={10}/></button>
@@ -2007,7 +2007,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 <label className="text-slate-500 text-xs font-semibold">Wiederholen</label>
                 <button type="button"
                   className={`toggle ${recur.enabled?'on':''}`}
-                  style={{background:recur.enabled?'#0f172a':'rgba(0,0,0,0.15)'}}
+                  style={{background:recur.enabled?'#000000':'rgba(0,0,0,0.15)'}}
                   onClick={()=>setRecur(r=>({...r,enabled:!r.enabled}))}/>
               </div>
               {recur.enabled && (
@@ -2371,7 +2371,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
                 const rows = shareScope==='single'&&selSchicht
                   ? selSchicht.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')
                   : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>`<tr><td colspan="4" style="background:#f1f5f9;font-weight:700;padding:10px 12px">${fmtDe(s.datum)}${s.titel?' — '+s.titel:''}</td></tr>`+s.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')).join('');
-                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#0f172a}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#0f172a;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`);
+                w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#000000}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#000000;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`);
                 w.document.close();
               }}
                 className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all border"
@@ -2698,7 +2698,7 @@ const GesamtDienstplanView = ({ profiles }) => {
 
   if (loading) return (
     <div className="up space-y-5">
-      <div><h1 className="text-xl font-bold" style={{color:'#334155'}}>Gesamt</h1><p className="text-slate-500 text-sm mt-0.5">Lade Dienstpläne aus allen Bereichen…</p></div>
+      <div><h1 className="text-xl font-bold" style={{color:'#000000'}}>Gesamt</h1><p className="text-slate-500 text-sm mt-0.5">Lade Dienstpläne aus allen Bereichen…</p></div>
       <div className="glass rounded-2xl py-16 text-center"><p className="text-slate-400">Verbinde…</p></div>
     </div>
   );
@@ -2713,7 +2713,7 @@ const GesamtDienstplanView = ({ profiles }) => {
   return (
     <div className="space-y-5 up">
       <div>
-        <h1 className="text-xl font-bold" style={{color:'#334155'}}>Gesamt</h1>
+        <h1 className="text-xl font-bold" style={{color:'#000000'}}>Gesamt</h1>
         <p className="text-slate-500 text-sm mt-0.5">{upcoming.length} Schichten · alle Bereiche</p>
       </div>
 
@@ -2798,13 +2798,13 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
   const addBereich = () => {
     if (!bName.trim() || !profiles) return;
     const id = bName.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Math.random().toString(36).slice(2,5);
-    saveProfiles([...profiles, { id, label: bName.trim(), color: bColor, grad: `linear-gradient(135deg,${bColor},#334155)` }]);
+    saveProfiles([...profiles, { id, label: bName.trim(), color: bColor, grad: `linear-gradient(135deg,${bColor},#000000)` }]);
     setBName(''); setBColor('#06b6d4');
     toast('Bereich hinzugefügt ✓');
   };
   const saveBereich = id => {
     if (!profiles) return;
-    saveProfiles(profiles.map(p => p.id===id ? { ...p, label: bEditName, color: bEditColor, grad: `linear-gradient(135deg,${bEditColor},#334155)` } : p));
+    saveProfiles(profiles.map(p => p.id===id ? { ...p, label: bEditName, color: bEditColor, grad: `linear-gradient(135deg,${bEditColor},#000000)` } : p));
     setBEditId(null); toast('Bereich gespeichert ✓');
   };
   const removeBereich = id => {
@@ -3056,7 +3056,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
           <div className="font-semibold text-slate-900 text-sm">Lukas Reuter</div>
           <div className="text-slate-500 text-xs">Admin · Alle Rechte</div>
         </div>
-        <span className="pill text-xs font-semibold" style={{background:'rgba(0,0,0,0.08)',color:'#0f172a'}}>Admin</span>
+        <span className="pill text-xs font-semibold" style={{background:'rgba(0,0,0,0.08)',color:'#000000'}}>Admin</span>
       </div>
 
       {/* Firebase users */}
@@ -3147,7 +3147,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
               <div className="pt-1">
                 <label className="text-slate-500 text-xs block mb-2">Bereichs-Zugang</label>
                 <div className="space-y-2">
-                  {[...PROFILES, { id:'__gesamt__', label:'Gesamt (Übersicht)', color:'#334155' }].map(pr => {
+                  {[...PROFILES, { id:'__gesamt__', label:'Gesamt (Übersicht)', color:'#000000' }].map(pr => {
                     const acc = (form.areaAccess||{})[pr.id]??'none';
                     return (
                       <div key={pr.id}>
@@ -3265,7 +3265,7 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
       <div className="w-full max-w-xs up">
         <div className="text-center mb-8">
           <img src="/logo.png" style={{width:80,height:80,margin:'0 auto 16px',display:'block',objectFit:'contain',mixBlendMode:'multiply'}} alt="K21"/>
-          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#0f172a',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
+          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#000000',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
         </div>
 
         <div className="glass rounded-2xl glow" style={{overflow:'visible'}}>
@@ -3395,7 +3395,7 @@ const AbfrageForm = ({ token }) => {
         <div className="glass rounded-2xl p-5 glow">
           <div className="flex items-center gap-2 mb-3">
             <img src="/logo.png" style={{width:24,height:24,objectFit:'contain',mixBlendMode:'multiply'}} alt="K21"/>
-            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:11,color:'#0f172a',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
+            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:11,color:'#000000',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
           </div>
           <h1 className="text-lg font-black text-slate-900">{schicht.titel||fmtDe(schicht.datum)}</h1>
           <p className="text-slate-500 text-sm">{fmtDe(schicht.datum)} · {schicht.slots.length} Slots</p>
@@ -3513,9 +3513,9 @@ const App = () => {
     let np;
     if (headerEdit==='new') {
       const id=headerEditName.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')+'-'+Math.random().toString(36).slice(2,5);
-      np=[...profiles,{id,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#334155)`}];
+      np=[...profiles,{id,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#000000)`}];
     } else {
-      np=profiles.map(p=>p.id===headerEdit?{...p,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#334155)`}:p);
+      np=profiles.map(p=>p.id===headerEdit?{...p,label:headerEditName.trim(),color:headerEditColor,grad:`linear-gradient(135deg,${headerEditColor},#000000)`}:p);
     }
     setProfiles(np); PROFILES=np;
     db.collection('config').doc('profiles').set({data:np}).catch(()=>{});
@@ -3654,7 +3654,7 @@ const App = () => {
                 className="px-3.5 py-1.5 text-xs font-bold transition-all"
                 style={{
                   borderRadius: 30,
-                  background: profile==='__gesamt__' ? '#334155' : 'transparent',
+                  background: profile==='__gesamt__' ? '#000000' : 'transparent',
                   color: profile==='__gesamt__' ? '#ffffff' : 'rgba(255,255,255,0.35)',
                   border: profile==='__gesamt__' ? '1px solid #475569' : '1px solid rgba(255,255,255,0.1)',
                 }}>
