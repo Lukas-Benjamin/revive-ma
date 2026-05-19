@@ -1361,6 +1361,37 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const myPerson   = useMemo(() => currentUser ? ma.personen.find(p=>p.name===currentUser.name)||null : null, [ma.personen, currentUser]);
   const myGroupIds = useMemo(() => myPerson ? (myPerson.gruppenIds||(myPerson.gruppeId?[myPerson.gruppeId]:[])) : [], [myPerson]);
 
+  // ── Offene Abfragen für eingeloggten User ──
+  const [abfrageModal, setAbfrageModal] = useState(null); // schicht
+  const [abfrageResp,  setAbfrageResp]  = useState({});   // {slotId: art}
+  const openAbfragen = useMemo(() => {
+    if (!myPerson) return [];
+    return ma.schichten.filter(s=>s.abfrageToken && !(s.wuensche||[]).some(w=>w.personId===myPerson.id));
+  }, [ma.schichten, myPerson]);
+
+  const submitAbfrageResp = () => {
+    if (!myPerson || !abfrageModal || !onChange) return;
+    const wishes = Object.entries(abfrageResp).filter(([,v])=>v&&v!=='neutral').map(([slotId,art])=>({personId:myPerson.id,slotId,art}));
+    const hasYes = wishes.some(w=>w.art==='wunschdienst');
+    const hasNo  = wishes.some(w=>w.art==='wunschfrei');
+    onChange(m=>{
+      const newSchichten = m.schichten.map(s=>{
+        if(s.id!==abfrageModal.id) return s;
+        return {...s,wuensche:[...(s.wuensche||[]).filter(w=>w.personId!==myPerson.id),...wishes]};
+      });
+      let updates = {...m, schichten:newSchichten};
+      if(hasNo && !hasYes && abfrageModal.datum) {
+        const existingAbw=(m.abwesenheiten||[]).filter(a=>!(a.personId===myPerson.id&&a.from===abfrageModal.datum&&(a.reason||'').startsWith('Abfrage')));
+        updates.abwesenheiten=[...existingAbw,{id:genId(),personId:myPerson.id,from:abfrageModal.datum,to:abfrageModal.datum,reason:'Abfrage: '+(abfrageModal.titel||abfrageModal.datum)}];
+      } else if(hasYes) {
+        updates.abwesenheiten=(m.abwesenheiten||[]).filter(a=>!(a.personId===myPerson.id&&a.from===abfrageModal.datum&&(a.reason||'').startsWith('Abfrage')));
+      }
+      return updates;
+    });
+    setAbfrageModal(null); setAbfrageResp({});
+    toast('Antwort gespeichert ✓');
+  };
+
   const createPlan = () => {
     if (!planForm.name.trim()) return;
     const neu = {id:genId(), name:planForm.name.trim(), erstelltAm:today()};
@@ -1878,6 +1909,21 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         </div>
       )}
 
+      {myPerson && openAbfragen.length>0 && (
+        <div className="rounded-2xl p-4 cursor-pointer transition-all"
+          style={{background:'rgba(99,102,241,0.10)',border:'1px solid rgba(99,102,241,0.25)'}}
+          onClick={()=>{setAbfrageModal(openAbfragen[0]);setAbfrageResp({});}}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📋</span>
+            <div>
+              <div className="font-semibold text-indigo-700 text-sm">{openAbfragen.length} offene Abfrage{openAbfragen.length!==1?'n':''}</div>
+              <div className="text-indigo-500 text-xs">Tippe hier, um zu antworten</div>
+            </div>
+            <span className="ml-auto text-indigo-400 text-base">›</span>
+          </div>
+        </div>
+      )}
+
       {sorted.length===0 ? (
         <div className="glass rounded-2xl py-16 text-center">
           <div className="text-slate-400 font-medium mb-1">Noch keine Schichten</div>
@@ -1944,6 +1990,50 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               <button onClick={dupSchicht} disabled={!dupDate}
                 className="flex-1 bg-white hover:bg-gray-100 disabled:opacity-40 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Duplizieren</button>
               <button onClick={()=>setDupModal(null)} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Abbrechen</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {abfrageModal && (
+        <Modal title={`Abfrage: ${abfrageModal.titel||fmtDe(abfrageModal.datum)}`} onClose={()=>{setAbfrageModal(null);setAbfrageResp({});}}>
+          <div className="space-y-4">
+            <p className="text-slate-500 text-xs">{fmtDe(abfrageModal.datum)} — Bitte für jeden Slot angeben, ob du kannst.</p>
+            <div className="space-y-2">
+              {(abfrageModal.slots||[]).map(sl => {
+                const grp = ma.gruppen.find(g=>g.id===sl.gruppeId);
+                const val = abfrageResp[sl.id]||'neutral';
+                return (
+                  <div key={sl.id} className="flex items-center gap-2 p-3 rounded-xl" style={{background:'rgba(0,0,0,0.04)'}}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-slate-800 text-sm font-medium">{sl.label||grp?.name||'Slot'}</div>
+                      {sl.zeit && <div className="text-slate-500 text-xs">{sl.zeit}</div>}
+                    </div>
+                    <div className="flex gap-1">
+                      {[['wunschdienst','✓','rgba(16,185,129,0.15)','#10b981'],['neutral','–','rgba(100,116,139,0.12)','#64748b'],['wunschfrei','✗','rgba(239,68,68,0.12)','#ef4444']].map(([art,lbl,bg,col])=>(
+                        <button key={art} onClick={()=>setAbfrageResp(r=>({...r,[sl.id]:art}))}
+                          className="w-8 h-8 flex items-center justify-center text-sm font-bold transition-all"
+                          style={{borderRadius:20,background:val===art?bg:'rgba(0,0,0,0.05)',color:val===art?col:'#94a3b8',border:val===art?`1px solid ${col}40`:'1px solid transparent'}}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {openAbfragen.length>1 && (
+              <div className="text-indigo-500 text-xs text-center">+{openAbfragen.length-1} weitere Abfrage{openAbfragen.length-1!==1?'n':''} offen</div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={submitAbfrageResp}
+                className="flex-1 bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>Antwort speichern</button>
+              {openAbfragen.length>1 && (
+                <button onClick={()=>{const next=openAbfragen.find(s=>s.id!==abfrageModal.id);if(next){setAbfrageModal(next);setAbfrageResp({});}}}
+                  className="px-4 py-2.5 text-indigo-600 text-sm font-semibold transition-all" style={{borderRadius:30,background:'rgba(99,102,241,0.10)'}}>Nächste →</button>
+              )}
+              <button onClick={()=>{setAbfrageModal(null);setAbfrageResp({});}}
+                className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm transition-all" style={{borderRadius:30}}>Später</button>
             </div>
           </div>
         </Modal>
@@ -3008,19 +3098,33 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
   const save = async () => {
     const data = {name:form.name.trim(),pin:form.pin,role:form.role,permissions:form.permissions||{},areaAccess:form.areaAccess||{},areaGroups:form.areaGroups||{}};
     if (!data.name||!data.pin) return;
-    if (modal==='add') await db.collection('k21-users').add({...data,createdAt:new Date().toISOString()});
-    else await db.collection('k21-users').doc(modal.user.id).update(data);
+    try {
+      if (modal==='add') {
+        await fetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      } else {
+        await fetch(`/api/users/${modal.user.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      }
+    } catch {}
+    // Firestore fallback / realtime sync
+    if (modal==='add') db.collection('k21-users').add({...data,createdAt:new Date().toISOString()}).catch(()=>{});
+    else db.collection('k21-users').doc(modal.user.id).update(data).catch(()=>{});
     setModal(null);
   };
 
   const del = async u => {
     if (!confirm(`${u.name} wirklich löschen?`)) return;
-    await db.collection('k21-users').doc(u.id).delete();
+    await fetch(`/api/users/${u.id}?c=k21-users`,{method:'DELETE'}).catch(()=>{});
+    db.collection('k21-users').doc(u.id).delete().catch(()=>{});
   };
 
   const changeMyPin = async () => {
     if (!myPin.trim()) return;
-    if (currentUser?.role !== 'owner') await db.collection('k21-users').doc(currentUser.id).update({pin:myPin});
+    if (currentUser?.role === 'owner') {
+      await fetch('/api/admin-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(()=>{});
+    } else {
+      await fetch(`/api/users/${currentUser.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(()=>{});
+      db.collection('k21-users').doc(currentUser.id).update({pin:myPin}).catch(()=>{});
+    }
     onUpdateUser({...currentUser});
     setMyPin(''); setPinOK(true); setTimeout(()=>setPinOK(false),2500);
   };
@@ -3255,11 +3359,23 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
   const [dropOpen, setDropOpen]= useState(false);
 
   useEffect(() => {
-    const unsub = db.collection('k21-users').onSnapshot(
-      snap => { setUsers(snap.docs.map(d=>({id:d.id,...d.data()}))); setReady(true); },
-      () => setReady(true)
-    );
-    return () => unsub();
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch('/api/users?c=k21-users');
+        if (!r.ok) throw new Error('server');
+        const data = await r.json();
+        if (!cancelled) { setUsers(data); setReady(true); return; }
+      } catch {}
+      // Fallback: direct Firestore
+      const unsub = db.collection('k21-users').onSnapshot(
+        snap => { if (!cancelled) { setUsers(snap.docs.map(d=>({id:d.id,...d.data()}))); setReady(true); } },
+        () => { if (!cancelled) setReady(true); }
+      );
+      return () => unsub();
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   const allNames = [OWNER_NAME, ...users.map(u=>u.name)];
