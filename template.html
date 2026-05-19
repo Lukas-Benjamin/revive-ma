@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>K21 Dienstplan</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    @font-face { font-family: 'Gotham'; src: url('/fonts/GothamBold.otf') format('opentype'); font-weight: 900; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Gesta'; src: url('/fonts/GestaRegular.otf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Gesta'; src: url('/fonts/GestaMedium.otf') format('opentype'); font-weight: 600; font-style: normal; font-display: swap; }
+  </style>
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -22,7 +25,8 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: #f8fafc; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    body { background: #f8fafc; color: #000000; font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    body { background: #f8fafc; color: #000000; font-family: 'Gesta', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    h1, h2, h3, h4, h5, h6, .grad, .font-bold, .font-semibold, .font-extrabold, .font-black { font-family: 'Gotham', 'Gesta', sans-serif !important; }
     .glass { background: #ffffff; border: 1px solid rgba(0,0,0,0.08); }
     .glass-hover:hover { background: #f1f5f9; }
     .glow { box-shadow: 0 4px 32px rgba(0,0,0,0.08); }
@@ -3265,7 +3269,7 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
       <div className="w-full max-w-xs up">
         <div className="text-center mb-8">
           <img src="/logo.png" style={{width:80,height:80,margin:'0 auto 16px',display:'block',objectFit:'contain',mixBlendMode:'multiply'}} alt="K21"/>
-          <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#000000',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
+          <h1 style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:28,color:'#000000',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
         </div>
 
         <div className="glass rounded-2xl glow" style={{overflow:'visible'}}>
@@ -3395,7 +3399,7 @@ const AbfrageForm = ({ token }) => {
         <div className="glass rounded-2xl p-5 glow">
           <div className="flex items-center gap-2 mb-3">
             <img src="/logo.png" style={{width:24,height:24,objectFit:'contain',mixBlendMode:'multiply'}} alt="K21"/>
-            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:11,color:'#000000',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
+            <span style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:11,color:'#000000',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
           </div>
           <h1 className="text-lg font-black text-slate-900">{schicht.titel||fmtDe(schicht.datum)}</h1>
           <p className="text-slate-500 text-sm">{fmtDe(schicht.datum)} · {schicht.slots.length} Slots</p>
@@ -3643,7 +3647,7 @@ const App = () => {
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28">
             <img src="/logo.png" style={{width:30,height:30,filter:'invert(1)',mixBlendMode:'screen'}} alt="K21"/>
             <div className="hidden sm:block">
-              <div style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>DIENSTPLAN</div>
+              <div style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>DIENSTPLAN</div>
             </div>
           </div>
 
