@@ -98,6 +98,21 @@ async function fsDelete(col, docId) {
   } catch(e) { console.warn('fsDelete error:', e.message); }
 }
 
+// ─── ChurchTools proxy ───────────────────────────────────────────────────────
+const CT_BASE  = 'https://k21.church.tools';
+const CT_TOKEN = '34u3QrZB3zHfmttGIcBYCV8patjCNVZvJ7QHvy6hoG5l1f3l0WXQ7j0pcfu3N2U8KB6dsZU2btfrQsSy9lSwsSgusP9KCOGXFYKTVpKXcUWWSOvRBpv4dRJtwTwERRv9UbNCuDGXBix8kO3Vh9L5dZvP6lalSTmyHf4OpuaC66X21iAaedBVSeGPLbNkp0poN4IbbUrAx1bp9M8XrgvbkaNN65HbujcWj4odbVO3lpnyoopSNHvx3GCsNZM3hCT7';
+
+app.get('/api/ct/*', async (req, res) => {
+  try {
+    const ctPath = req.params[0];
+    const qs     = new URLSearchParams(req.query).toString();
+    const url    = `${CT_BASE}/api/${ctPath}${qs ? '?' + qs : ''}`;
+    const r      = await fetch(url, { headers: { 'Authorization': `Login ${CT_TOKEN}` } });
+    const d      = await r.json();
+    res.json(d);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── API routes ──────────────────────────────────────────────────────────────
 app.get('/api/users', async (req, res) => {
   const col = req.query.c || 'k21-users';

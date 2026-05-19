@@ -179,7 +179,7 @@ const exportIcal = (ma, single) => {
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
-const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[], abwesenheiten:[] });
+const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[], abwesenheiten:[], ctSettings:{calendarMappings:[],importedEventIds:[],ctPersonIds:{}} });
 const DEFAULT_SHARED = () => ({ personen:[], konflikte:[], praeferenzen:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
 const SWATCH    = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
@@ -3601,6 +3601,362 @@ const AbfrageForm = ({ token }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CHURCHTOOLS VIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+const CTView = ({ ma, onChange, toast }) => {
+  const [tab, setTab]             = useState('einstellungen');
+  const [calendars, setCalendars] = useState([]);
+  const [svcGroups, setSvcGroups] = useState([]);
+  const [services,  setServices]  = useState([]);
+  const [events,    setEvents]    = useState([]);
+  const [persons,   setPersons]   = useState([]);
+  const [loadState, setLoadState] = useState({});
+  const [personSearch, setPersonSearch] = useState('');
+  const [expandedCal, setExpandedCal]   = useState(null);
+  const [fromDate, setFromDate] = useState(today());
+  const [toDate,   setToDate]   = useState(() => { const d=new Date(); d.setDate(d.getDate()+28); return d.toISOString().slice(0,10); });
+  const setLoad = (k,v) => setLoadState(s=>({...s,[k]:v}));
+
+  const cts = ma.ctSettings||{calendarMappings:[],importedEventIds:[],ctPersonIds:{}};
+
+  // Local editable mappings
+  const [localMaps, setLocalMaps] = useState(() => cts.calendarMappings||[]);
+  useEffect(()=>{ setLocalMaps(cts.calendarMappings||[]); },[ma.ctSettings]);
+
+  const getMap = calId => localMaps.find(m=>m.calendarId===calId)||{calendarId:calId,enabled:false,planId:'',serviceGroupMappings:[]};
+  const updMap = (calId,patch) => setLocalMaps(prev=>{
+    const ex=prev.find(m=>m.calendarId===calId);
+    if(ex) return prev.map(m=>m.calendarId===calId?{...m,...patch}:m);
+    return [...prev,{calendarId:calId,enabled:false,planId:'',serviceGroupMappings:[],...patch}];
+  });
+  const updSgMap = (calId,ctGId,maGId) => setLocalMaps(prev=>prev.map(m=>{
+    if(m.calendarId!==calId) return m;
+    const sgm=m.serviceGroupMappings||[];
+    const ex=sgm.find(s=>s.ctGroupId===ctGId);
+    if(ex) return {...m,serviceGroupMappings:sgm.map(s=>s.ctGroupId===ctGId?{...s,maGruppeId:maGId}:s)};
+    return {...m,serviceGroupMappings:[...sgm,{ctGroupId:ctGId,maGruppeId:maGId}]};
+  }));
+
+  const saveMappings = () => {
+    onChange(m=>({...m,ctSettings:{...cts,calendarMappings:localMaps}}));
+    toast('Einstellungen gespeichert ✓');
+  };
+
+  // Load base CT data on mount
+  useEffect(()=>{
+    setLoad('init',true);
+    Promise.all([
+      fetch('/api/ct/calendars').then(r=>r.json()),
+      fetch('/api/ct/servicegroups').then(r=>r.json()),
+      fetch('/api/ct/services?limit=200').then(r=>r.json()),
+    ]).then(([c,sg,sv])=>{
+      setCalendars(c.data||[]);
+      setSvcGroups(sg.data||[]);
+      setServices(sv.data||[]);
+    }).catch(()=>toast('ChurchTools nicht erreichbar','error'))
+      .finally(()=>setLoad('init',false));
+  },[]);
+
+  const loadEvents = () => {
+    setLoad('events',true);
+    const enabledIds=(cts.calendarMappings||[]).filter(m=>m.enabled).map(m=>m.calendarId);
+    const ids=enabledIds.length?enabledIds:calendars.map(c=>c.id);
+    const p=new URLSearchParams({from:fromDate,to:toDate});
+    ids.forEach(id=>p.append('calendar_ids[]',id));
+    fetch(`/api/ct/events?${p}`).then(r=>r.json())
+      .then(d=>setEvents(d.data||[]))
+      .catch(()=>toast('Events konnten nicht geladen werden','error'))
+      .finally(()=>setLoad('events',false));
+  };
+
+  const loadPersons = () => {
+    setLoad('persons',true);
+    fetch('/api/ct/persons?limit=200').then(r=>r.json())
+      .then(d=>setPersons(d.data||[]))
+      .catch(()=>toast('Personen konnten nicht geladen werden','error'))
+      .finally(()=>setLoad('persons',false));
+  };
+
+  // Import a CT event as a Schicht
+  const importEvent = ev => {
+    if(!onChange) return;
+    const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
+    const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
+    const slots = (ev.eventServices||[]).map(es=>{
+      const svc = services.find(s=>s.id===es.serviceId);
+      const sgMapping = (mapping?.serviceGroupMappings||[]).find(s=>s.ctGroupId===svc?.serviceGroupId);
+      return {
+        id:genId(), gruppeId:sgMapping?.maGruppeId||'',
+        label:svc?.name||'Dienst',
+        personId:(cts.ctPersonIds||{})[String(es.personId)]||'',
+        ctServiceId:es.serviceId, ctEventServiceId:es.id,
+      };
+    });
+    const datum = ev.startDate?.slice(0,10)||'';
+    const startT = ev.startDate ? new Date(ev.startDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+    const endT   = ev.endDate   ? new Date(ev.endDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+    const schicht = {
+      id:genId(), datum, titel:ev.name||'Event',
+      zeit: startT+(endT?'–'+endT:''),
+      slots, planId:mapping?.planId||'',
+      ctEventId:String(ev.id), veroeffentlicht:false, wuensche:[], tauschAnfragen:[],
+    };
+    onChange(m=>({...m,
+      schichten:[...(m.schichten||[]),schicht],
+      ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),String(ev.id)]},
+    }));
+    toast(`"${ev.name}" importiert ✓`);
+  };
+
+  // Import all new events at once
+  const autoImport = () => {
+    const newEvs = events.filter(ev=>!(cts.importedEventIds||[]).includes(String(ev.id)));
+    if(!newEvs.length){toast('Keine neuen Events');return;}
+    newEvs.forEach(importEvent);
+    toast(`${newEvs.length} Events importiert ✓`);
+  };
+
+  // Import a CT person as MA person
+  const importPerson = p => {
+    if(!onChange) return;
+    const name = [p.firstName,p.lastName].filter(Boolean).join(' ');
+    const newP  = { id:genId(), name, ctPersonId:String(p.id), gruppenIds:[], farbe:'#8b5cf6', email:p.email||'' };
+    onChange(m=>({...m,
+      personen:[...(m.personen||[]),newP],
+      ctSettings:{...(m.ctSettings||{}),ctPersonIds:{...(m.ctSettings?.ctPersonIds||{}),[String(p.id)]:newP.id}},
+    }));
+    toast(`${name} importiert ✓`);
+  };
+
+  const isImported = evId => (cts.importedEventIds||[]).includes(String(evId));
+  const isPersonImported = pId => !!(cts.ctPersonIds||{})[String(pId)];
+
+  const fmtEvDate = d => { try { return new Date(d).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'Europe/Berlin'}); } catch { return d; } };
+  const fmtEvTime = d => { try { return new Date(d).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}); } catch { return ''; } };
+
+  const SUBTABS = [{id:'einstellungen',label:'⚙ Einstellungen'},{id:'events',label:'📅 Events'},{id:'personen',label:'👤 Personen'}];
+
+  return (
+    <div className="space-y-5">
+      {/* Sub-tabs */}
+      <div className="flex gap-1" style={{borderBottom:'2px solid rgba(0,0,0,0.08)'}}>
+        {SUBTABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            className="px-4 py-2 text-xs font-semibold transition-all"
+            style={{color:tab===t.id?'#000':'#94a3b8',borderBottom:tab===t.id?'2px solid #000':'2px solid transparent',marginBottom:'-2px'}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loadState.init && <div className="text-center py-8 text-slate-400 text-sm">Verbinde mit ChurchTools…</div>}
+
+      {/* ── EINSTELLUNGEN ── */}
+      {tab==='einstellungen' && !loadState.init && (
+        <div className="space-y-4">
+          <div className="glass rounded-2xl p-4" style={{borderLeft:'3px solid #6366f1'}}>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">ChurchTools Instanz</div>
+            <div className="text-sm text-slate-700 font-semibold">k21.church.tools</div>
+            <div className="text-xs text-slate-400 mt-0.5">{calendars.length} Kalender · {services.length} Dienstrollen · {svcGroups.length} Dienstgruppen</div>
+          </div>
+
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Kalender konfigurieren</div>
+
+          {calendars.map(cal=>{
+            const m = getMap(cal.id);
+            const open = expandedCal===cal.id;
+            return (
+              <div key={cal.id} className="glass rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={()=>setExpandedCal(open?null:cal.id)}>
+                  <button onClick={e=>{e.stopPropagation();updMap(cal.id,{enabled:!m.enabled});}}
+                    className="w-9 h-5 rounded-full transition-all flex-shrink-0 relative"
+                    style={{background:m.enabled?'#6366f1':'rgba(0,0,0,0.12)'}}>
+                    <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                      style={{left:m.enabled?'calc(100% - 18px)':'2px'}}/>
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-800 text-sm">{cal.name}</div>
+                    {m.enabled && <div className="text-xs text-slate-400">
+                      {m.planId ? `→ Plan: ${(ma.plaene||[]).find(p=>p.id===m.planId)?.name||m.planId}` : '→ Kein Plan (Hauptliste)'}
+                    </div>}
+                  </div>
+                  {m.enabled && <span className="text-slate-400 text-base">{open?'▲':'▼'}</span>}
+                </div>
+
+                {open && m.enabled && (
+                  <div className="border-t border-black/5 p-4 space-y-4" style={{background:'rgba(99,102,241,0.03)'}}>
+                    {/* Target plan */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Ziel-Plan im Dienstplan</label>
+                      <select value={m.planId||''} onChange={e=>updMap(cal.id,{planId:e.target.value})} className={"w-full "+INP_SM}>
+                        <option value="">Kein Plan (erscheint in allen)</option>
+                        {(ma.plaene||[]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    {/* Service group → MA group mapping */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 block mb-2">Dienstgruppen → MA-Gruppen</label>
+                      <div className="space-y-2">
+                        {svcGroups.map(sg=>{
+                          const sgm=(m.serviceGroupMappings||[]).find(s=>s.ctGroupId===sg.id);
+                          return (
+                            <div key={sg.id} className="flex items-center gap-2">
+                              <span className="text-xs text-slate-600 w-28 flex-shrink-0 truncate" title={sg.name}>{sg.name}</span>
+                              <span className="text-slate-300 text-xs">→</span>
+                              <select value={sgm?.maGruppeId||''} onChange={e=>updSgMap(cal.id,sg.id,e.target.value)}
+                                className={"flex-1 "+INP_SM}>
+                                <option value="">— nicht importieren —</option>
+                                {(ma.gruppen||[]).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="flex gap-2 pt-2">
+            <button onClick={saveMappings}
+              className="px-5 py-2.5 text-white text-sm font-bold transition-all"
+              style={{borderRadius:30,background:'#000'}}>Einstellungen speichern</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── EVENTS ── */}
+      {tab==='events' && !loadState.init && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="glass rounded-2xl p-4 flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs text-slate-500 font-semibold block mb-1">Von</label>
+              <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={INP_SM} style={{width:140}}/>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 font-semibold block mb-1">Bis</label>
+              <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={INP_SM} style={{width:140}}/>
+            </div>
+            <button onClick={loadEvents} disabled={loadState.events}
+              className="px-4 py-1.5 text-white text-xs font-bold transition-all disabled:opacity-50"
+              style={{borderRadius:30,background:'#6366f1'}}>
+              {loadState.events?'Lade…':'Events laden'}
+            </button>
+            {events.length>0 && (
+              <button onClick={autoImport}
+                className="px-4 py-1.5 text-xs font-bold transition-all"
+                style={{borderRadius:30,background:'rgba(16,185,129,0.12)',color:'#10b981',border:'1px solid rgba(16,185,129,0.3)'}}>
+                ⚡ Alle neuen importieren ({events.filter(e=>!isImported(e.id)).length})
+              </button>
+            )}
+          </div>
+
+          {events.length===0 && !loadState.events && (
+            <div className="text-center py-10 text-slate-400 text-sm">Klicke "Events laden" um Termine aus ChurchTools zu holen</div>
+          )}
+
+          <div className="space-y-3">
+            {events.map(ev=>{
+              const calId = parseInt(ev.calendar?.domainIdentifier||'0');
+              const calName = ev.calendar?.title||'?';
+              const imp = isImported(ev.id);
+              const slotsCount = (ev.eventServices||[]).length;
+              return (
+                <div key={ev.id} className="glass rounded-2xl p-4" style={{opacity:imp?0.65:1}}>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="font-semibold text-slate-800 text-sm">{ev.name}</span>
+                        <span className="pill text-xs" style={{background:'rgba(99,102,241,0.12)',color:'#6366f1'}}>{calName}</span>
+                        {imp && <span className="pill text-xs" style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>✓ Importiert</span>}
+                      </div>
+                      <div className="text-xs text-slate-500">{fmtEvDate(ev.startDate)} · {fmtEvTime(ev.startDate)}{ev.endDate?'–'+fmtEvTime(ev.endDate):''}</div>
+                      {slotsCount>0 && <div className="text-xs text-slate-400 mt-1">{slotsCount} Dienst{slotsCount!==1?'e':''}</div>}
+                    </div>
+                    {!imp && onChange && (
+                      <button onClick={()=>importEvent(ev)}
+                        className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
+                        style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
+                        + Importieren
+                      </button>
+                    )}
+                  </div>
+                  {/* Service slots preview */}
+                  {(ev.eventServices||[]).length>0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {(ev.eventServices||[]).slice(0,6).map(es=>{
+                        const svc=services.find(s=>s.id===es.serviceId);
+                        return <span key={es.id} className="pill text-xs" style={{background:'rgba(0,0,0,0.05)',color:'#64748b'}}>{svc?.name||'Dienst'}</span>;
+                      })}
+                      {(ev.eventServices||[]).length>6 && <span className="text-xs text-slate-400">+{(ev.eventServices||[]).length-6}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── PERSONEN ── */}
+      {tab==='personen' && !loadState.init && (
+        <div className="space-y-4">
+          <div className="flex gap-2 items-center">
+            <input value={personSearch} onChange={e=>setPersonSearch(e.target.value)}
+              placeholder="Suchen…" className={"flex-1 "+INP_SM}/>
+            <button onClick={loadPersons} disabled={loadState.persons}
+              className="px-4 py-1.5 text-white text-xs font-bold transition-all disabled:opacity-50"
+              style={{borderRadius:30,background:'#6366f1'}}>
+              {loadState.persons?'Lade…':'Personen laden'}
+            </button>
+          </div>
+
+          {persons.length===0 && !loadState.persons && (
+            <div className="text-center py-10 text-slate-400 text-sm">Klicke "Personen laden" um CT-Kontakte zu sehen</div>
+          )}
+
+          <div className="space-y-2">
+            {persons
+              .filter(p=>{
+                const name=`${p.firstName||''} ${p.lastName||''}`.toLowerCase();
+                return !personSearch||name.includes(personSearch.toLowerCase());
+              })
+              .map(p=>{
+                const imp = isPersonImported(p.id);
+                const maPerson = imp ? (ma.personen||[]).find(mp=>mp.id===(cts.ctPersonIds||{})[String(p.id)]) : null;
+                return (
+                  <div key={p.id} className="glass rounded-xl px-4 py-3 flex items-center gap-3" style={{opacity:imp?0.7:1}}>
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                      style={{background:imp?'#10b981':'#6366f1'}}>
+                      {(p.firstName||'?')[0]}{(p.lastName||'')[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-800 text-sm">{p.firstName} {p.lastName}</div>
+                      {imp && maPerson && <div className="text-xs text-green-600">✓ Als "{maPerson.name}" importiert</div>}
+                      {!imp && p.email && <div className="text-xs text-slate-400">{p.email}</div>}
+                    </div>
+                    {!imp && onChange && (
+                      <button onClick={()=>importPerson(p)}
+                        className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
+                        style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
+                        + Import
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = () => {
@@ -3786,6 +4142,7 @@ const App = () => {
       { id:'statistik',    label:'Statistik',     icon:IC.chart    },
     ] : []),
     ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog }] : []),
+    ...(isAdmin ? [{ id:'churchtools', label:'ChurchTools', icon:IC.zap }] : []),
   ];
 
   return (
@@ -3885,6 +4242,7 @@ const App = () => {
         {!isGesamt && page==='verfuegbarkeit'   && <VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
+        {!isGesamt && page==='churchtools'  && isAdmin      && <CTView ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
       </main>
       {headerEdit && (
         <Modal title={headerEdit==='new'?'Neuer Bereich':'Bereich umbenennen'} onClose={()=>setHeaderEdit(null)}>
