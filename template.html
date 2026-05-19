@@ -3264,9 +3264,7 @@ const LoginScreen = ({ onLogin, ownerPin }) => {
     <div className="min-h-screen flex items-center justify-center px-4" style={{background:'#f8fafc'}}>
       <div className="w-full max-w-xs up">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-2" style={{background:'#000000',borderColor:'#000000'}}>
-            <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:22,color:'#ffffff',letterSpacing:'-1px'}}>K21</span>
-          </div>
+          <img src="/logo.png" style={{width:72,height:72,margin:'0 auto 20px',display:'block'}} alt="K21"/>
           <h1 style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:28,color:'#0f172a',letterSpacing:'-0.04em',margin:0,lineHeight:1}}>Mitarbeiter</h1>
         </div>
 
@@ -3396,9 +3394,7 @@ const AbfrageForm = ({ token }) => {
       <div className="max-w-md mx-auto space-y-4 up">
         <div className="glass rounded-2xl p-5 glow">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-7 h-7 rounded-full border border-slate-300 flex items-center justify-center bg-black flex-shrink-0">
-              <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:8,color:'#fff',letterSpacing:'-0.5px'}}>K21</span>
-            </div>
+            <img src="/logo.png" style={{width:24,height:24}} alt="K21"/>
             <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:11,color:'#0f172a',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
           </div>
           <h1 className="text-lg font-black text-slate-900">{schicht.titel||fmtDe(schicht.datum)}</h1>
@@ -3645,9 +3641,7 @@ const App = () => {
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center">
           {/* Logo */}
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28">
-            <div className="w-8 h-8 rounded-full border border-white/60 flex items-center justify-center flex-shrink-0">
-              <span style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:9,color:'#ffffff',letterSpacing:'-0.5px'}}>K21</span>
-            </div>
+            <img src="/logo.png" style={{width:30,height:30,filter:'invert(1)'}} alt="K21"/>
             <div className="hidden sm:block">
               <div style={{fontFamily:'Montserrat,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>DIENSTPLAN</div>
             </div>
