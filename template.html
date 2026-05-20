@@ -3603,7 +3603,7 @@ const AbfrageForm = ({ token }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHURCHTOOLS VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const CTView = ({ ma, onChange, toast }) => {
+const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForProfile, toast }) => {
   const [tab, setTab]             = useState('einstellungen');
   const [calendars, setCalendars] = useState([]);
   const [svcGroups, setSvcGroups] = useState([]);
@@ -3615,6 +3615,9 @@ const CTView = ({ ma, onChange, toast }) => {
   const [expandedCal, setExpandedCal]   = useState(null);
   const [fromDate, setFromDate] = useState(today());
   const [toDate,   setToDate]   = useState(() => { const d=new Date(); d.setDate(d.getDate()+28); return d.toISOString().slice(0,10); });
+  // Person import modal
+  const [importModal, setImportModal] = useState(null); // CT person obj
+  const [impForm, setImpForm] = useState({pin:'', gruppenIds:[], rolle:'viewer', createLogin:true});
   const setLoad = (k,v) => setLoadState(s=>({...s,[k]:v}));
 
   const cts = ma.ctSettings||{calendarMappings:[],importedEventIds:[],ctPersonIds:{}};
@@ -3623,11 +3626,11 @@ const CTView = ({ ma, onChange, toast }) => {
   const [localMaps, setLocalMaps] = useState(() => cts.calendarMappings||[]);
   useEffect(()=>{ setLocalMaps(cts.calendarMappings||[]); },[ma.ctSettings]);
 
-  const getMap = calId => localMaps.find(m=>m.calendarId===calId)||{calendarId:calId,enabled:false,planId:'',serviceGroupMappings:[]};
+  const getMap = calId => localMaps.find(m=>m.calendarId===calId)||{calendarId:calId,enabled:false,targetProfileId:'',planId:'',serviceGroupMappings:[]};
   const updMap = (calId,patch) => setLocalMaps(prev=>{
     const ex=prev.find(m=>m.calendarId===calId);
     if(ex) return prev.map(m=>m.calendarId===calId?{...m,...patch}:m);
-    return [...prev,{calendarId:calId,enabled:false,planId:'',serviceGroupMappings:[],...patch}];
+    return [...prev,{calendarId:calId,enabled:false,targetProfileId:'',planId:'',serviceGroupMappings:[],...patch}];
   });
   const updSgMap = (calId,ctGId,maGId) => setLocalMaps(prev=>prev.map(m=>{
     if(m.calendarId!==calId) return m;
@@ -3677,11 +3680,12 @@ const CTView = ({ ma, onChange, toast }) => {
       .finally(()=>setLoad('persons',false));
   };
 
-  // Import a CT event as a Schicht
-  const importEvent = ev => {
-    if(!onChange) return;
+  // Import a CT event as a Schicht — routes to correct area via writeMaForProfile
+  const importEvent = async ev => {
     const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
     const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
+    const targetProfId = mapping?.targetProfileId || profile || '';
+
     const slots = (ev.eventServices||[]).map(es=>{
       const svc = services.find(s=>s.id===es.serviceId);
       const sgMapping = (mapping?.serviceGroupMappings||[]).find(s=>s.ctGroupId===svc?.serviceGroupId);
@@ -3689,7 +3693,7 @@ const CTView = ({ ma, onChange, toast }) => {
         id:genId(), gruppeId:sgMapping?.maGruppeId||'',
         label:svc?.name||'Dienst',
         personId:(cts.ctPersonIds||{})[String(es.personId)]||'',
-        ctServiceId:es.serviceId, ctEventServiceId:es.id,
+        ctServiceId:es.serviceId,
       };
     });
     const datum = ev.startDate?.slice(0,10)||'';
@@ -3701,31 +3705,57 @@ const CTView = ({ ma, onChange, toast }) => {
       slots, planId:mapping?.planId||'',
       ctEventId:String(ev.id), veroeffentlicht:false, wuensche:[], tauschAnfragen:[],
     };
-    onChange(m=>({...m,
-      schichten:[...(m.schichten||[]),schicht],
-      ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),String(ev.id)]},
-    }));
-    toast(`"${ev.name}" importiert ✓`);
+
+    // Write to target profile (may differ from current area)
+    if(writeMaForProfile && targetProfId && targetProfId!==profile) {
+      await writeMaForProfile(targetProfId, m=>({...m, schichten:[...(m.schichten||[]),schicht]}));
+    } else if(onChange) {
+      onChange(m=>({...m, schichten:[...(m.schichten||[]),schicht]}));
+    }
+
+    // Track imported ID in current area's ctSettings
+    onChange && onChange(m=>({...m, ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),String(ev.id)]}}));
+
+    const areaLabel = (profiles||[]).find(p=>p.id===targetProfId)?.label||targetProfId||'Aktueller Bereich';
+    toast(`"${ev.name}" → ${areaLabel} ✓`);
   };
 
   // Import all new events at once
-  const autoImport = () => {
+  const autoImport = async () => {
     const newEvs = events.filter(ev=>!(cts.importedEventIds||[]).includes(String(ev.id)));
     if(!newEvs.length){toast('Keine neuen Events');return;}
-    newEvs.forEach(importEvent);
+    for(const ev of newEvs) await importEvent(ev);
     toast(`${newEvs.length} Events importiert ✓`);
   };
 
-  // Import a CT person as MA person
-  const importPerson = p => {
-    if(!onChange) return;
+  // Open person import modal
+  const openImportPerson = p => {
+    setImportModal(p);
+    setImpForm({pin:'', gruppenIds:[], rolle:'viewer', createLogin:true});
+  };
+
+  // Confirm person import with account creation
+  const confirmImportPerson = async () => {
+    if(!importModal) return;
+    const p = importModal;
     const name = [p.firstName,p.lastName].filter(Boolean).join(' ');
-    const newP  = { id:genId(), name, ctPersonId:String(p.id), gruppenIds:[], farbe:'#8b5cf6', email:p.email||'' };
-    onChange(m=>({...m,
-      personen:[...(m.personen||[]),newP],
-      ctSettings:{...(m.ctSettings||{}),ctPersonIds:{...(m.ctSettings?.ctPersonIds||{}),[String(p.id)]:newP.id}},
-    }));
-    toast(`${name} importiert ✓`);
+    const newId = genId();
+    const newPerson = { id:newId, name, ctPersonId:String(p.id), gruppenIds:impForm.gruppenIds, farbe:'#8b5cf6', email:p.email||'' };
+
+    // Add to shared personen
+    onChangeShared && onChangeShared(m=>({...m, personen:[...(m.personen||[]),newPerson]}));
+
+    // Track CT person ID mapping in current area's ctSettings
+    onChange && onChange(m=>({...m, ctSettings:{...(m.ctSettings||{}), ctPersonIds:{...(m.ctSettings?.ctPersonIds||{}),[String(p.id)]:newId}}}));
+
+    // Create login account in k21-users if requested
+    if(impForm.createLogin && impForm.pin.trim()) {
+      const loginData = { name, pin:impForm.pin.trim(), role:impForm.rolle, areas:[], areaAccess:{} };
+      await fetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(loginData)}).catch(()=>{});
+    }
+
+    toast(`${name} importiert${impForm.createLogin?' + Account erstellt':''} ✓`);
+    setImportModal(null);
   };
 
   const isImported = evId => (cts.importedEventIds||[]).includes(String(evId));
@@ -3785,6 +3815,14 @@ const CTView = ({ ma, onChange, toast }) => {
 
                 {open && m.enabled && (
                   <div className="border-t border-black/5 p-4 space-y-4" style={{background:'rgba(99,102,241,0.03)'}}>
+                    {/* Target area (profile) */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Zielbereich (App-Bereich)</label>
+                      <select value={m.targetProfileId||''} onChange={e=>updMap(cal.id,{targetProfileId:e.target.value})} className={"w-full "+INP_SM}>
+                        <option value="">Aktueller Bereich</option>
+                        {(profiles||[]).map(pr=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
+                      </select>
+                    </div>
                     {/* Target plan */}
                     <div>
                       <label className="text-xs font-semibold text-slate-500 block mb-1.5">Ziel-Plan im Dienstplan</label>
@@ -3939,7 +3977,7 @@ const CTView = ({ ma, onChange, toast }) => {
                       {!imp && p.email && <div className="text-xs text-slate-400">{p.email}</div>}
                     </div>
                     {!imp && onChange && (
-                      <button onClick={()=>importPerson(p)}
+                      <button onClick={()=>openImportPerson(p)}
                         className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
                         style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
                         + Import
@@ -3949,6 +3987,85 @@ const CTView = ({ ma, onChange, toast }) => {
                 );
               })
             }
+          </div>
+        </div>
+      )}
+
+      {/* ── PERSON IMPORT MODAL ── */}
+      {importModal && (
+        <div className="modal-overlay fixed inset-0 flex items-center justify-center z-50 px-4"
+          style={{background:'rgba(0,0,0,0.55)'}} onClick={e=>{if(e.target===e.currentTarget)setImportModal(null);}}>
+          <div className="glass rounded-3xl p-6 w-full max-w-sm space-y-4 glow">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-lg grad">Person importieren</h3>
+              <button onClick={()=>setImportModal(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><SI p={IC.x} size={18}/></button>
+            </div>
+            <div className="glass rounded-xl px-4 py-3 flex items-center gap-3" style={{background:'rgba(99,102,241,0.05)'}}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{background:'#6366f1'}}>
+                {(importModal.firstName||'?')[0]}{(importModal.lastName||'')[0]}
+              </div>
+              <div>
+                <div className="font-semibold text-slate-800 text-sm">{importModal.firstName} {importModal.lastName}</div>
+                {importModal.email && <div className="text-xs text-slate-400">{importModal.email}</div>}
+              </div>
+            </div>
+
+            {/* Groups */}
+            <div>
+              <label className="text-slate-500 text-xs font-semibold block mb-2">Gruppen zuweisen</label>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {(ma.gruppen||[]).map(g=>(
+                  <label key={g.id} className="flex items-center gap-2.5 cursor-pointer py-1">
+                    <input type="checkbox"
+                      checked={impForm.gruppenIds.includes(g.id)}
+                      onChange={e=>setImpForm(f=>({...f,gruppenIds:e.target.checked?[...f.gruppenIds,g.id]:f.gruppenIds.filter(x=>x!==g.id)}))}
+                      className="w-4 h-4 rounded accent-indigo-500"/>
+                    <span className="text-sm text-slate-700">{g.name}</span>
+                  </label>
+                ))}
+                {(ma.gruppen||[]).length===0 && <div className="text-xs text-slate-400 italic">Keine Gruppen vorhanden</div>}
+              </div>
+            </div>
+
+            {/* Create login toggle */}
+            <div className="flex items-center justify-between py-1">
+              <span className="text-sm text-slate-700 font-semibold">App-Account erstellen</span>
+              <button onClick={()=>setImpForm(f=>({...f,createLogin:!f.createLogin}))}
+                className={"toggle "+(impForm.createLogin?'on':'')}
+                style={{background:impForm.createLogin?'#6366f1':'rgba(0,0,0,0.12)'}}/>
+            </div>
+
+            {impForm.createLogin && (
+              <div className="space-y-3 border-t border-black/5 pt-3">
+                <div>
+                  <label className="text-slate-500 text-xs font-semibold block mb-1.5">PIN (für Login)</label>
+                  <input type="password" value={impForm.pin} onChange={e=>setImpForm(f=>({...f,pin:e.target.value}))}
+                    placeholder="z.B. 1234" className={"w-full "+INP}/>
+                </div>
+                <div>
+                  <label className="text-slate-500 text-xs font-semibold block mb-1.5">Rolle</label>
+                  <select value={impForm.rolle} onChange={e=>setImpForm(f=>({...f,rolle:e.target.value}))} className={"w-full "+INP}>
+                    <option value="viewer">Zuschauer (nur lesen)</option>
+                    <option value="editor">Editor (bearbeiten)</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={confirmImportPerson}
+                disabled={impForm.createLogin && !impForm.pin.trim()}
+                className="flex-1 text-white font-bold py-2.5 text-sm transition-all disabled:opacity-40"
+                style={{borderRadius:30,background:'#6366f1'}}>
+                Importieren{impForm.createLogin?' + Account':''}
+              </button>
+              <button onClick={()=>setImportModal(null)}
+                className="px-4 py-2.5 text-slate-400 text-sm"
+                style={{borderRadius:30,background:'rgba(0,0,0,0.05)'}}>
+                Abbrechen
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -4123,6 +4240,16 @@ const App = () => {
     writeSharedMa(next);
   };
 
+  // Write MA data for any profile (used by CT import to route events to correct area)
+  const writeMaForProfile = async (targetProfileId, updater) => {
+    try {
+      const snap = await db.collection(targetProfileId).doc('ma').get();
+      const existing = snap.data()?.data || DEFAULT_MA();
+      const next = typeof updater==='function' ? updater(existing) : updater;
+      await db.collection(targetProfileId).doc('ma').set({ data: next });
+    } catch(e) { console.warn('writeMaForProfile error:', e.message); }
+  };
+
   // Merged view used by all child components
   const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[], praeferenzen: sharedMa.praeferenzen||[], abwesenheiten: ma.abwesenheiten||[] };
 
@@ -4242,7 +4369,7 @@ const App = () => {
         {!isGesamt && page==='verfuegbarkeit'   && <VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
-        {!isGesamt && page==='churchtools'  && isAdmin      && <CTView ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
+        {!isGesamt && page==='churchtools'  && isAdmin      && <CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/>}
       </main>
       {headerEdit && (
         <Modal title={headerEdit==='new'?'Neuer Bereich':'Bereich umbenennen'} onClose={()=>setHeaderEdit(null)}>
