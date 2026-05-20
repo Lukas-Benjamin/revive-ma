@@ -67,6 +67,17 @@ function fromFsValue(fv) {
   return null;
 }
 
+async function fsGetDoc(col, docId) {
+  try {
+    const token = await getToken();
+    const r = await fetch(fsUrl(col, docId), {headers:{Authorization:`Bearer ${token}`}});
+    if (!r.ok) { console.warn('fsGetDoc failed', r.status, col, docId); return null; }
+    const d = await r.json();
+    if (!d.fields) return null;
+    return Object.fromEntries(Object.entries(d.fields).map(([k,v])=>[k,fromFsValue(v)]));
+  } catch(e) { console.warn('fsGetDoc error:', e.message); return null; }
+}
+
 async function fsGetCollection(col) {
   try {
     const token = await getToken();
@@ -97,6 +108,37 @@ async function fsDelete(col, docId) {
     await fetch(fsUrl(col,docId),{method:'DELETE',headers:{Authorization:`Bearer ${token}`}});
   } catch(e) { console.warn('fsDelete error:', e.message); }
 }
+
+// ─── MA data proxy (bypasses Firestore security rules) ──────────────────────
+// GET  /api/ma?profile=revive   → read {profile}/ma doc (returns {data:{...}})
+app.get('/api/ma', async (req, res) => {
+  const profile = req.query.profile;
+  if (!profile) return res.status(400).json({error:'missing profile'});
+  const doc = await fsGetDoc(profile, 'ma');
+  if (doc === null) return res.status(503).json({error:'Firestore nicht erreichbar'});
+  res.json(doc);
+});
+
+// POST /api/ma?profile=revive   → write {profile}/ma doc (body = {data:{...}})
+app.post('/api/ma', async (req, res) => {
+  const profile = req.query.profile;
+  if (!profile) return res.status(400).json({error:'missing profile'});
+  await fsSet(profile, 'ma', req.body);
+  res.json({ok:true});
+});
+
+// GET  /api/shared-ma   → read shared/ma doc
+app.get('/api/shared-ma', async (req, res) => {
+  const doc = await fsGetDoc('shared', 'ma');
+  if (doc === null) return res.status(503).json({error:'Firestore nicht erreichbar'});
+  res.json(doc);
+});
+
+// POST /api/shared-ma   → write shared/ma doc (body = {data:{...}})
+app.post('/api/shared-ma', async (req, res) => {
+  await fsSet('shared', 'ma', req.body);
+  res.json({ok:true});
+});
 
 // ─── ChurchTools proxy ───────────────────────────────────────────────────────
 const CT_BASE  = 'https://k21.church.tools';

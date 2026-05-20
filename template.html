@@ -4271,12 +4271,15 @@ const App = () => {
   }, [visibleProfiles]);
 
   // Firebase Sync — per-profile (gruppen, vorlagen, schichten)
+  // Uses server-side proxy to bypass expired Firestore security rules
   const writeMa = data => {
     setSyncState('saving');
     localStorage.setItem(`ma-data-${profile}`, JSON.stringify(data));
-    db.collection(profile).doc('ma').set({ data })
-      .then(()=>setSyncState('synced'))
-      .catch(()=>setSyncState('error'));
+    fetch(`/api/ma?profile=${encodeURIComponent(profile)}`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({data}),
+    }).then(()=>setSyncState('synced')).catch(()=>setSyncState('error'));
   };
 
   useEffect(() => {
@@ -4311,9 +4314,14 @@ const App = () => {
   };
 
   // Firebase Sync — shared personen + konflikte (cross-profile)
+  // Uses server-side proxy to bypass expired Firestore security rules
   const writeSharedMa = data => {
     localStorage.setItem('ma-data-shared', JSON.stringify(data));
-    db.collection('shared').doc('ma').set({ data }).catch(()=>{});
+    fetch('/api/shared-ma', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({data}),
+    }).catch(()=>{});
   };
 
   useEffect(() => {
@@ -4338,10 +4346,17 @@ const App = () => {
   // Write MA data for any profile (used by CT import to route events to correct area)
   const writeMaForProfile = async (targetProfileId, updater) => {
     try {
-      const snap = await db.collection(targetProfileId).doc('ma').get();
-      const existing = snap.data()?.data || DEFAULT_MA();
+      // Read current data via server proxy
+      const r = await fetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`);
+      const doc = await r.json();
+      const existing = doc?.data || DEFAULT_MA();
       const next = typeof updater==='function' ? updater(existing) : updater;
-      await db.collection(targetProfileId).doc('ma').set({ data: next });
+      // Write via server proxy
+      await fetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({data: next}),
+      });
     } catch(e) { console.warn('writeMaForProfile error:', e.message); }
   };
 
