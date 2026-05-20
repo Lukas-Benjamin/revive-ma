@@ -3618,6 +3618,8 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
   // Person import modal
   const [importModal, setImportModal] = useState(null); // CT person obj
   const [impForm, setImpForm] = useState({pin:'', gruppenIds:[], rolle:'viewer', createLogin:true});
+  // Inline edit for already-imported persons
+  const [editingMaPersonId, setEditingMaPersonId] = useState(null);
   const setLoad = (k,v) => setLoadState(s=>({...s,[k]:v}));
 
   const cts = ma.ctSettings||{calendarMappings:[],importedEventIds:[],ctPersonIds:{}};
@@ -3680,52 +3682,87 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
       .finally(()=>setLoad('persons',false));
   };
 
-  // Import a CT event as a Schicht — routes to correct area via writeMaForProfile
-  const importEvent = async ev => {
-    const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
-    const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
-    const targetProfId = mapping?.targetProfileId || profile || '';
-
+  // Build a Schicht object from a CT event (pure, no side effects)
+  const buildSchicht = (ev, mapping) => {
+    const ctPersonIds = cts.ctPersonIds||{};
     const slots = (ev.eventServices||[]).map(es=>{
       const svc = services.find(s=>s.id===es.serviceId);
       const sgMapping = (mapping?.serviceGroupMappings||[]).find(s=>s.ctGroupId===svc?.serviceGroupId);
       return {
         id:genId(), gruppeId:sgMapping?.maGruppeId||'',
         label:svc?.name||'Dienst',
-        personId:(cts.ctPersonIds||{})[String(es.personId)]||'',
+        personId:ctPersonIds[String(es.personId)]||'',
         ctServiceId:es.serviceId,
       };
     });
     const datum = ev.startDate?.slice(0,10)||'';
     const startT = ev.startDate ? new Date(ev.startDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
     const endT   = ev.endDate   ? new Date(ev.endDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
-    const schicht = {
+    return {
       id:genId(), datum, titel:ev.name||'Event',
       zeit: startT+(endT?'–'+endT:''),
       slots, planId:mapping?.planId||'',
       ctEventId:String(ev.id), veroeffentlicht:false, wuensche:[], tauschAnfragen:[],
     };
+  };
 
-    // Write to target profile (may differ from current area)
+  // Import a single CT event as a Schicht
+  const importEvent = async ev => {
+    const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
+    const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
+    const targetProfId = mapping?.targetProfileId || profile || '';
+    const schicht = buildSchicht(ev, mapping);
+    const evId = String(ev.id);
+
     if(writeMaForProfile && targetProfId && targetProfId!==profile) {
+      // Write schicht to other profile, track ID in current profile — single call each
       await writeMaForProfile(targetProfId, m=>({...m, schichten:[...(m.schichten||[]),schicht]}));
+      onChange && onChange(m=>({...m, ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),evId]}}));
     } else if(onChange) {
-      onChange(m=>({...m, schichten:[...(m.schichten||[]),schicht]}));
+      // Same profile — one call for schicht + importedId together (no race)
+      onChange(m=>({...m,
+        schichten:[...(m.schichten||[]),schicht],
+        ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),evId]},
+      }));
     }
-
-    // Track imported ID in current area's ctSettings
-    onChange && onChange(m=>({...m, ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),String(ev.id)]}}));
 
     const areaLabel = (profiles||[]).find(p=>p.id===targetProfId)?.label||targetProfId||'Aktueller Bereich';
     toast(`"${ev.name}" → ${areaLabel} ✓`);
   };
 
-  // Import all new events at once
+  // Bulk import: all new events in one write per profile (no race conditions)
   const autoImport = async () => {
     const newEvs = events.filter(ev=>!(cts.importedEventIds||[]).includes(String(ev.id)));
     if(!newEvs.length){toast('Keine neuen Events');return;}
-    for(const ev of newEvs) await importEvent(ev);
-    toast(`${newEvs.length} Events importiert ✓`);
+
+    // Group schichten by target profile
+    const schichtenByProfile = {};
+    const allNewIds = [];
+    for(const ev of newEvs) {
+      const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
+      const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
+      const targetProfId = mapping?.targetProfileId || profile || '';
+      const schicht = buildSchicht(ev, mapping);
+      if(!schichtenByProfile[targetProfId]) schichtenByProfile[targetProfId] = [];
+      schichtenByProfile[targetProfId].push(schicht);
+      allNewIds.push(String(ev.id));
+    }
+
+    // Write other profiles (one await per profile, each a single Firestore write)
+    for(const [profId, schichten] of Object.entries(schichtenByProfile)) {
+      if(profId !== profile && writeMaForProfile) {
+        await writeMaForProfile(profId, m=>({...m, schichten:[...(m.schichten||[]),...schichten]}));
+      }
+    }
+
+    // Current profile: one single onChange call for ALL schichten + ALL ids
+    const currentSchichten = schichtenByProfile[profile] || [];
+    onChange && onChange(m=>({...m,
+      schichten:[...(m.schichten||[]),...currentSchichten],
+      ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),...allNewIds]},
+    }));
+
+    toast(`${newEvs.length} Event${newEvs.length!==1?'s':''} importiert ✓`);
   };
 
   // Open person import modal
@@ -3964,24 +4001,80 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
               })
               .map(p=>{
                 const imp = isPersonImported(p.id);
-                const maPerson = imp ? (ma.personen||[]).find(mp=>mp.id===(cts.ctPersonIds||{})[String(p.id)]) : null;
+                const maPersonId = (cts.ctPersonIds||{})[String(p.id)];
+                const maPerson = imp ? (ma.personen||[]).find(mp=>mp.id===maPersonId) : null;
+                const isEditing = editingMaPersonId === maPersonId;
                 return (
-                  <div key={p.id} className="glass rounded-xl px-4 py-3 flex items-center gap-3" style={{opacity:imp?0.7:1}}>
-                    <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-                      style={{background:imp?'#10b981':'#6366f1'}}>
-                      {(p.firstName||'?')[0]}{(p.lastName||'')[0]}
+                  <div key={p.id} className="glass rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                        style={{background:maPerson?.farbe||(imp?'#10b981':'#6366f1')}}>
+                        {(p.firstName||'?')[0]}{(p.lastName||'')[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-slate-800 text-sm">{p.firstName} {p.lastName}</div>
+                        {imp && maPerson && <div className="text-xs text-green-600">✓ {maPerson.name} · {(maPerson.gruppenIds||[]).map(gid=>(ma.gruppen||[]).find(g=>g.id===gid)?.name).filter(Boolean).join(', ')||'Keine Gruppe'}</div>}
+                        {!imp && p.email && <div className="text-xs text-slate-400">{p.email}</div>}
+                      </div>
+                      {imp && onChangeShared && (
+                        <button onClick={()=>setEditingMaPersonId(isEditing?null:maPersonId)}
+                          className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
+                          style={{borderRadius:20,background:isEditing?'rgba(0,0,0,0.08)':'rgba(99,102,241,0.1)',color:isEditing?'#64748b':'#6366f1',border:'1px solid rgba(99,102,241,0.2)'}}>
+                          {isEditing?'Schließen':'✏ Bearbeiten'}
+                        </button>
+                      )}
+                      {!imp && onChange && (
+                        <button onClick={()=>openImportPerson(p)}
+                          className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
+                          style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
+                          + Import
+                        </button>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-slate-800 text-sm">{p.firstName} {p.lastName}</div>
-                      {imp && maPerson && <div className="text-xs text-green-600">✓ Als "{maPerson.name}" importiert</div>}
-                      {!imp && p.email && <div className="text-xs text-slate-400">{p.email}</div>}
-                    </div>
-                    {!imp && onChange && (
-                      <button onClick={()=>openImportPerson(p)}
-                        className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
-                        style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
-                        + Import
-                      </button>
+                    {/* Inline edit panel for imported persons */}
+                    {isEditing && maPerson && (
+                      <div className="border-t border-black/5 px-4 py-4 space-y-3" style={{background:'rgba(99,102,241,0.03)'}}>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Name</label>
+                            <input defaultValue={maPerson.name}
+                              onChange={e=>{const v=e.target.value;onChangeShared&&onChangeShared(m=>({...m,personen:(m.personen||[]).map(pp=>pp.id===maPerson.id?{...pp,name:v}:pp)}));}}
+                              className={"w-full "+INP_SM}/>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Farbe</label>
+                            <input type="color" value={maPerson.farbe||'#8b5cf6'}
+                              onChange={e=>{const v=e.target.value;onChangeShared&&onChangeShared(m=>({...m,personen:(m.personen||[]).map(pp=>pp.id===maPerson.id?{...pp,farbe:v}:pp)}));}}
+                              className="w-full h-9 rounded-lg border border-black/10 cursor-pointer p-1"/>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-500 block mb-1.5">Gruppen</label>
+                          <div className="flex flex-wrap gap-2">
+                            {(ma.gruppen||[]).map(g=>{
+                              const has=(maPerson.gruppenIds||[]).includes(g.id);
+                              return (
+                                <button key={g.id} onClick={()=>{
+                                  const newGIds=has?(maPerson.gruppenIds||[]).filter(x=>x!==g.id):[...(maPerson.gruppenIds||[]),g.id];
+                                  onChangeShared&&onChangeShared(m=>({...m,personen:(m.personen||[]).map(pp=>pp.id===maPerson.id?{...pp,gruppenIds:newGIds}:pp)}));
+                                }}
+                                  className="px-2.5 py-1 text-xs font-semibold transition-all"
+                                  style={{borderRadius:20,background:has?'rgba(99,102,241,0.15)':'rgba(0,0,0,0.06)',color:has?'#6366f1':'#64748b',border:has?'1px solid rgba(99,102,241,0.4)':'1px solid transparent'}}>
+                                  {has?'✓ ':''}{g.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <button onClick={()=>{
+                          onChangeShared&&onChangeShared(m=>({...m,personen:(m.personen||[]).filter(pp=>pp.id!==maPerson.id)}));
+                          onChange&&onChange(m=>{const cp={...(m.ctSettings?.ctPersonIds||{})};delete cp[String(p.id)];return {...m,ctSettings:{...(m.ctSettings||{}),ctPersonIds:cp}};});
+                          setEditingMaPersonId(null);
+                          toast(`${maPerson.name} entfernt`);
+                        }} className="text-xs text-red-400 hover:text-red-600 transition-colors font-semibold">
+                          Person entfernen
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
@@ -4198,8 +4291,8 @@ const App = () => {
         if (snap.metadata.hasPendingWrites) return;
         const data = snap.data()?.data;
         if (data) {
-          const { gruppen=[], vorlagen=[], schichten=[], plaene=[], tauschAnfragen=[], abwesenheiten=[] } = data;
-          const clean = { gruppen, vorlagen, schichten, plaene, tauschAnfragen, abwesenheiten };
+          const { gruppen=[], vorlagen=[], schichten=[], plaene=[], tauschAnfragen=[], abwesenheiten=[], ctSettings={calendarMappings:[],importedEventIds:[],ctPersonIds:{}} } = data;
+          const clean = { gruppen, vorlagen, schichten, plaene, tauschAnfragen, abwesenheiten, ctSettings };
           localStorage.setItem(localKey, JSON.stringify(clean)); setMa(clean);
         }
         setSyncState('synced');
@@ -4210,9 +4303,11 @@ const App = () => {
   }, [profile]);
 
   const updateMa = updater => {
-    const next = typeof updater==='function' ? updater(ma) : updater;
-    setMa(next);
-    writeMa(next);
+    setMa(prev => {
+      const next = typeof updater==='function' ? updater(prev) : updater;
+      writeMa(next);
+      return next;
+    });
   };
 
   // Firebase Sync — shared personen + konflikte (cross-profile)
