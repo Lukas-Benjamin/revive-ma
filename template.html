@@ -3604,7 +3604,7 @@ const AbfrageForm = ({ token }) => {
 // CHURCHTOOLS VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForProfile, toast }) => {
-  const [tab, setTab]             = useState('einstellungen');
+  const [tab, setTab] = useState('einstellungen');
   const [calendars, setCalendars] = useState([]);
   const [svcGroups, setSvcGroups] = useState([]);
   const [services,  setServices]  = useState([]);
@@ -3612,11 +3612,15 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
   const [persons,   setPersons]   = useState([]);
   const [loadState, setLoadState] = useState({});
   const [personSearch, setPersonSearch] = useState('');
-  const [expandedCal, setExpandedCal]   = useState(null);
+  const [expandedCal, setExpandedCal] = useState(null);
+  const [expandedEvent, setExpandedEvent] = useState(null);
+  const [calFilter, setCalFilter] = useState('');
   const [fromDate, setFromDate] = useState(today());
   const [toDate,   setToDate]   = useState(() => { const d=new Date(); d.setDate(d.getDate()+28); return d.toISOString().slice(0,10); });
+  // Event import preview modal
+  const [previewSchicht, setPreviewSchicht] = useState(null);
   // Person import modal
-  const [importModal, setImportModal] = useState(null); // CT person obj
+  const [importModal, setImportModal] = useState(null);
   const [impForm, setImpForm] = useState({pin:'', gruppenIds:[], rolle:'viewer', createLogin:true});
   // Inline edit for already-imported persons
   const [editingMaPersonId, setEditingMaPersonId] = useState(null);
@@ -3628,11 +3632,12 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
   const [localMaps, setLocalMaps] = useState(() => cts.calendarMappings||[]);
   useEffect(()=>{ setLocalMaps(cts.calendarMappings||[]); },[ma.ctSettings]);
 
-  const getMap = calId => localMaps.find(m=>m.calendarId===calId)||{calendarId:calId,enabled:false,targetProfileId:'',planId:'',serviceGroupMappings:[]};
+  const EMPTY_MAP = calId => ({calendarId:calId,enabled:false,targetProfileId:'',planId:'',serviceGroupMappings:[],serviceLabelOverrides:{}});
+  const getMap = calId => localMaps.find(m=>m.calendarId===calId)||EMPTY_MAP(calId);
   const updMap = (calId,patch) => setLocalMaps(prev=>{
     const ex=prev.find(m=>m.calendarId===calId);
     if(ex) return prev.map(m=>m.calendarId===calId?{...m,...patch}:m);
-    return [...prev,{calendarId:calId,enabled:false,targetProfileId:'',planId:'',serviceGroupMappings:[],...patch}];
+    return [...prev,{...EMPTY_MAP(calId),...patch}];
   });
   const updSgMap = (calId,ctGId,maGId) => setLocalMaps(prev=>prev.map(m=>{
     if(m.calendarId!==calId) return m;
@@ -3682,87 +3687,104 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
       .finally(()=>setLoad('persons',false));
   };
 
-  // Build a Schicht object from a CT event (pure, no side effects)
-  const buildSchicht = (ev, mapping) => {
+  // Build slots from CT event services (respects label overrides + group/person mappings)
+  const buildSlots = (ev, mapping) => {
     const ctPersonIds = cts.ctPersonIds||{};
-    const slots = (ev.eventServices||[]).map(es=>{
+    const labelOverrides = mapping?.serviceLabelOverrides||{};
+    return (ev.eventServices||[]).map(es=>{
       const svc = services.find(s=>s.id===es.serviceId);
       const sgMapping = (mapping?.serviceGroupMappings||[]).find(s=>s.ctGroupId===svc?.serviceGroupId);
       return {
-        id:genId(), gruppeId:sgMapping?.maGruppeId||'',
-        label:svc?.name||'Dienst',
-        personId:ctPersonIds[String(es.personId)]||'',
-        ctServiceId:es.serviceId,
+        id:genId(),
+        gruppeId: sgMapping?.maGruppeId||'',
+        label: labelOverrides[String(es.serviceId)] || svc?.name || 'Dienst',
+        personId: ctPersonIds[String(es.personId)]||'',
+        ctServiceId: es.serviceId,
+        _ctPersonId: es.personId, // only for preview display
       };
     });
-    const datum = ev.startDate?.slice(0,10)||'';
-    const startT = ev.startDate ? new Date(ev.startDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
-    const endT   = ev.endDate   ? new Date(ev.endDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
-    return {
-      id:genId(), datum, titel:ev.name||'Event',
-      zeit: startT+(endT?'–'+endT:''),
-      slots, planId:mapping?.planId||'',
-      ctEventId:String(ev.id), veroeffentlicht:false, wuensche:[], tauschAnfragen:[],
-    };
   };
 
-  // Import a single CT event as a Schicht
-  const importEvent = async ev => {
+  const evTimes = ev => {
+    const startT = ev.startDate ? new Date(ev.startDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+    const endT   = ev.endDate   ? new Date(ev.endDate).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+    return startT+(endT?'–'+endT:'');
+  };
+
+  // Open the import preview modal (user can edit everything before confirming)
+  const openImportPreview = ev => {
     const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
     const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
     const targetProfId = mapping?.targetProfileId || profile || '';
-    const schicht = buildSchicht(ev, mapping);
-    const evId = String(ev.id);
+    setPreviewSchicht({
+      datum: ev.startDate?.slice(0,10)||'',
+      titel: ev.name||'',
+      zeit: evTimes(ev),
+      slots: buildSlots(ev, mapping),
+      planId: mapping?.planId||'',
+      targetProfId,
+      ctEventId: String(ev.id),
+    });
+  };
+
+  // Confirm import from preview modal
+  const confirmImport = async () => {
+    if(!previewSchicht) return;
+    const {targetProfId, ctEventId, ...rest} = previewSchicht;
+    // Strip internal _ctPersonId helper field from slots
+    const cleanSlots = (rest.slots||[]).map(({_ctPersonId,...s})=>s);
+    const schicht = {...rest, slots:cleanSlots, id:genId(), veroeffentlicht:false, wuensche:[], tauschAnfragen:[]};
+    const evId = ctEventId;
 
     if(writeMaForProfile && targetProfId && targetProfId!==profile) {
-      // Write schicht to other profile, track ID in current profile — single call each
       await writeMaForProfile(targetProfId, m=>({...m, schichten:[...(m.schichten||[]),schicht]}));
       onChange && onChange(m=>({...m, ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),evId]}}));
     } else if(onChange) {
-      // Same profile — one call for schicht + importedId together (no race)
       onChange(m=>({...m,
         schichten:[...(m.schichten||[]),schicht],
         ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),evId]},
       }));
     }
-
     const areaLabel = (profiles||[]).find(p=>p.id===targetProfId)?.label||targetProfId||'Aktueller Bereich';
-    toast(`"${ev.name}" → ${areaLabel} ✓`);
+    toast(`"${schicht.titel}" → ${areaLabel} ✓`);
+    setPreviewSchicht(null);
   };
+
+  // Update a slot field in the preview modal
+  const updPreviewSlot = (slotId, patch) => setPreviewSchicht(ps=>({...ps, slots:ps.slots.map(s=>s.id===slotId?{...s,...patch}:s)}));
+  const removePreviewSlot = slotId => setPreviewSchicht(ps=>({...ps, slots:ps.slots.filter(s=>s.id!==slotId)}));
+  const addPreviewSlot = () => setPreviewSchicht(ps=>({...ps, slots:[...(ps.slots||[]),{id:genId(),label:'',gruppeId:'',personId:''}]}));
 
   // Bulk import: all new events in one write per profile (no race conditions)
   const autoImport = async () => {
     const newEvs = events.filter(ev=>!(cts.importedEventIds||[]).includes(String(ev.id)));
     if(!newEvs.length){toast('Keine neuen Events');return;}
 
-    // Group schichten by target profile
     const schichtenByProfile = {};
     const allNewIds = [];
     for(const ev of newEvs) {
       const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
       const mapping = (cts.calendarMappings||[]).find(m=>m.calendarId===calId);
       const targetProfId = mapping?.targetProfileId || profile || '';
-      const schicht = buildSchicht(ev, mapping);
+      const slots = buildSlots(ev, mapping).map(({_ctPersonId,...s})=>s);
+      const datum = ev.startDate?.slice(0,10)||'';
+      const schicht = {id:genId(), datum, titel:ev.name||'Event', zeit:evTimes(ev), slots, planId:mapping?.planId||'', ctEventId:String(ev.id), veroeffentlicht:false, wuensche:[], tauschAnfragen:[]};
       if(!schichtenByProfile[targetProfId]) schichtenByProfile[targetProfId] = [];
       schichtenByProfile[targetProfId].push(schicht);
       allNewIds.push(String(ev.id));
     }
 
-    // Write other profiles (one await per profile, each a single Firestore write)
     for(const [profId, schichten] of Object.entries(schichtenByProfile)) {
       if(profId !== profile && writeMaForProfile) {
         await writeMaForProfile(profId, m=>({...m, schichten:[...(m.schichten||[]),...schichten]}));
       }
     }
-
-    // Current profile: one single onChange call for ALL schichten + ALL ids
     const currentSchichten = schichtenByProfile[profile] || [];
     onChange && onChange(m=>({...m,
       schichten:[...(m.schichten||[]),...currentSchichten],
       ctSettings:{...(m.ctSettings||{}),importedEventIds:[...(m.ctSettings?.importedEventIds||[]),...allNewIds]},
     }));
-
-    toast(`${newEvs.length} Event${newEvs.length!==1?'s':''} importiert ✓`);
+    toast(`${newEvs.length} Event${newEvs.length!==1?'s':''} ohne Vorschau importiert ✓`);
   };
 
   // Open person import modal
@@ -3797,9 +3819,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
 
   const isImported = evId => (cts.importedEventIds||[]).includes(String(evId));
   const isPersonImported = pId => !!(cts.ctPersonIds||{})[String(pId)];
-
   const fmtEvDate = d => { try { return new Date(d).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'2-digit',timeZone:'Europe/Berlin'}); } catch { return d; } };
-  const fmtEvTime = d => { try { return new Date(d).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}); } catch { return ''; } };
 
   const SUBTABS = [{id:'einstellungen',label:'⚙ Einstellungen'},{id:'events',label:'📅 Events'},{id:'personen',label:'👤 Personen'}];
 
@@ -3818,9 +3838,10 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
 
       {loadState.init && <div className="text-center py-8 text-slate-400 text-sm">Verbinde mit ChurchTools…</div>}
 
-      {/* ── EINSTELLUNGEN ── */}
+      {/* ══════════ EINSTELLUNGEN ══════════ */}
       {tab==='einstellungen' && !loadState.init && (
         <div className="space-y-4">
+          {/* Info bar */}
           <div className="glass rounded-2xl p-4" style={{borderLeft:'3px solid #6366f1'}}>
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">ChurchTools Instanz</div>
             <div className="text-sm text-slate-700 font-semibold">k21.church.tools</div>
@@ -3832,54 +3853,71 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
           {calendars.map(cal=>{
             const m = getMap(cal.id);
             const open = expandedCal===cal.id;
+            const svcsInCal = services; // all services are shown per group
             return (
               <div key={cal.id} className="glass rounded-2xl overflow-hidden">
-                <div className="flex items-center gap-3 p-4 cursor-pointer" onClick={()=>setExpandedCal(open?null:cal.id)}>
+                {/* Calendar header row */}
+                <div className="flex items-center gap-3 p-4">
                   <button onClick={e=>{e.stopPropagation();updMap(cal.id,{enabled:!m.enabled});}}
                     className="w-9 h-5 rounded-full transition-all flex-shrink-0 relative"
                     style={{background:m.enabled?'#6366f1':'rgba(0,0,0,0.12)'}}>
                     <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
                       style={{left:m.enabled?'calc(100% - 18px)':'2px'}}/>
                   </button>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={()=>setExpandedCal(open?null:cal.id)}>
                     <div className="font-semibold text-slate-800 text-sm">{cal.name}</div>
-                    {m.enabled && <div className="text-xs text-slate-400">
-                      {m.planId ? `→ Plan: ${(ma.plaene||[]).find(p=>p.id===m.planId)?.name||m.planId}` : '→ Kein Plan (Hauptliste)'}
-                    </div>}
+                    {m.enabled && (
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        {(profiles||[]).find(pr=>pr.id===m.targetProfileId)?.label||'Aktueller Bereich'}
+                        {m.planId ? ` · ${(ma.plaene||[]).find(p=>p.id===m.planId)?.name||'Plan'}` : ''}
+                      </div>
+                    )}
                   </div>
-                  {m.enabled && <span className="text-slate-400 text-base">{open?'▲':'▼'}</span>}
+                  {m.enabled && (
+                    <button onClick={()=>setExpandedCal(open?null:cal.id)}
+                      className="text-slate-400 text-xs font-semibold px-2 py-1 rounded-lg transition-all hover:bg-black/5">
+                      {open?'▲ Schließen':'▼ Konfigurieren'}
+                    </button>
+                  )}
                 </div>
 
+                {/* Expanded settings */}
                 {open && m.enabled && (
-                  <div className="border-t border-black/5 p-4 space-y-4" style={{background:'rgba(99,102,241,0.03)'}}>
-                    {/* Target area (profile) */}
+                  <div className="border-t border-black/5 p-4 space-y-5" style={{background:'rgba(99,102,241,0.025)'}}>
+
+                    {/* ① Zielbereich */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Zielbereich (App-Bereich)</label>
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">① Zielbereich</div>
                       <select value={m.targetProfileId||''} onChange={e=>updMap(cal.id,{targetProfileId:e.target.value})} className={"w-full "+INP_SM}>
                         <option value="">Aktueller Bereich</option>
                         {(profiles||[]).map(pr=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
                       </select>
+                      <div className="text-xs text-slate-400 mt-1">Events aus diesem Kalender gehen in diesen App-Bereich</div>
                     </div>
-                    {/* Target plan */}
+
+                    {/* ② Ziel-Plan */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Ziel-Plan im Dienstplan</label>
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">② Ziel-Plan</div>
                       <select value={m.planId||''} onChange={e=>updMap(cal.id,{planId:e.target.value})} className={"w-full "+INP_SM}>
-                        <option value="">Kein Plan (erscheint in allen)</option>
+                        <option value="">Kein Plan — erscheint in allen Plänen</option>
                         {(ma.plaene||[]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
-                    {/* Service group → MA group mapping */}
+
+                    {/* ③ Dienstgruppen → MA-Gruppen */}
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 block mb-2">Dienstgruppen → MA-Gruppen</label>
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">③ Dienstgruppen → MA-Gruppen</div>
+                      <div className="text-xs text-slate-400 mb-3">Welche CT-Dienstgruppe wird welcher MA-Gruppe zugeordnet?</div>
+                      {svcGroups.length===0 && <div className="text-xs text-slate-400 italic">Keine Dienstgruppen in ChurchTools gefunden</div>}
                       <div className="space-y-2">
                         {svcGroups.map(sg=>{
                           const sgm=(m.serviceGroupMappings||[]).find(s=>s.ctGroupId===sg.id);
                           return (
                             <div key={sg.id} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-600 w-28 flex-shrink-0 truncate" title={sg.name}>{sg.name}</span>
-                              <span className="text-slate-300 text-xs">→</span>
-                              <select value={sgm?.maGruppeId||''} onChange={e=>updSgMap(cal.id,sg.id,e.target.value)}
-                                className={"flex-1 "+INP_SM}>
+                              <div className="w-5 h-5 rounded flex-shrink-0 flex items-center justify-center text-xs" style={{background:'rgba(99,102,241,0.1)',color:'#6366f1'}}>G</div>
+                              <span className="text-xs text-slate-700 font-semibold flex-shrink-0 w-32 truncate" title={sg.name}>{sg.name}</span>
+                              <span className="text-slate-300 text-xs flex-shrink-0">→</span>
+                              <select value={sgm?.maGruppeId||''} onChange={e=>updSgMap(cal.id,sg.id,e.target.value)} className={"flex-1 "+INP_SM}>
                                 <option value="">— nicht importieren —</option>
                                 {(ma.gruppen||[]).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
                               </select>
@@ -3887,6 +3925,40 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                           );
                         })}
                       </div>
+                    </div>
+
+                    {/* ④ Dienst-Labels */}
+                    <div>
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">④ Dienst-Labels umbenennen</div>
+                      <div className="text-xs text-slate-400 mb-3">Optional: CT-Dienst-Name durch eigenen Label ersetzen (leer = CT-Name wird verwendet)</div>
+                      {svcGroups.map(sg=>{
+                        const svcsOfGroup = services.filter(s=>s.serviceGroupId===sg.id);
+                        if(!svcsOfGroup.length) return null;
+                        return (
+                          <div key={sg.id} className="mb-3">
+                            <div className="text-xs text-slate-500 font-semibold mb-1.5 flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded flex items-center justify-center text-xs" style={{background:'rgba(99,102,241,0.1)',color:'#6366f1'}}>G</span>
+                              {sg.name}
+                            </div>
+                            <div className="space-y-1.5 pl-5">
+                              {svcsOfGroup.map(svc=>{
+                                const override=(m.serviceLabelOverrides||{})[String(svc.id)]||'';
+                                return (
+                                  <div key={svc.id} className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500 w-32 flex-shrink-0 truncate" title={svc.name}>{svc.name}</span>
+                                    <span className="text-slate-300 text-xs">→</span>
+                                    <input value={override} placeholder={svc.name}
+                                      onChange={e=>updMap(cal.id,{serviceLabelOverrides:{...(m.serviceLabelOverrides||{}),[String(svc.id)]:e.target.value}})}
+                                      className={"flex-1 "+INP_SM}/>
+                                    {override && <button onClick={()=>updMap(cal.id,{serviceLabelOverrides:{...(m.serviceLabelOverrides||{}),[String(svc.id)]:''}})} className="text-slate-300 hover:text-red-400 text-xs">✕</button>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {services.length===0 && <div className="text-xs text-slate-400 italic">Keine Dienste geladen</div>}
                     </div>
                   </div>
                 )}
@@ -3897,35 +3969,49 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
           <div className="flex gap-2 pt-2">
             <button onClick={saveMappings}
               className="px-5 py-2.5 text-white text-sm font-bold transition-all"
-              style={{borderRadius:30,background:'#000'}}>Einstellungen speichern</button>
+              style={{borderRadius:30,background:'#000'}}>
+              Einstellungen speichern
+            </button>
           </div>
         </div>
       )}
 
-      {/* ── EVENTS ── */}
+      {/* ══════════ EVENTS ══════════ */}
       {tab==='events' && !loadState.init && (
         <div className="space-y-4">
-          {/* Filters */}
-          <div className="glass rounded-2xl p-4 flex flex-wrap gap-3 items-end">
-            <div>
-              <label className="text-xs text-slate-500 font-semibold block mb-1">Von</label>
-              <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={INP_SM} style={{width:140}}/>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 font-semibold block mb-1">Bis</label>
-              <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={INP_SM} style={{width:140}}/>
-            </div>
-            <button onClick={loadEvents} disabled={loadState.events}
-              className="px-4 py-1.5 text-white text-xs font-bold transition-all disabled:opacity-50"
-              style={{borderRadius:30,background:'#6366f1'}}>
-              {loadState.events?'Lade…':'Events laden'}
-            </button>
-            {events.length>0 && (
-              <button onClick={autoImport}
-                className="px-4 py-1.5 text-xs font-bold transition-all"
-                style={{borderRadius:30,background:'rgba(16,185,129,0.12)',color:'#10b981',border:'1px solid rgba(16,185,129,0.3)'}}>
-                ⚡ Alle neuen importieren ({events.filter(e=>!isImported(e.id)).length})
+          {/* Filter bar */}
+          <div className="glass rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label className="text-xs text-slate-500 font-semibold block mb-1">Von</label>
+                <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={INP_SM} style={{width:140}}/>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 font-semibold block mb-1">Bis</label>
+                <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={INP_SM} style={{width:140}}/>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 font-semibold block mb-1">Kalender</label>
+                <select value={calFilter} onChange={e=>setCalFilter(e.target.value)} className={INP_SM} style={{width:160}}>
+                  <option value="">Alle Kalender</option>
+                  {calendars.map(c=><option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </select>
+              </div>
+              <button onClick={loadEvents} disabled={loadState.events}
+                className="px-4 py-1.5 text-white text-xs font-bold transition-all disabled:opacity-50"
+                style={{borderRadius:30,background:'#6366f1'}}>
+                {loadState.events?'Lade…':'Events laden'}
               </button>
+            </div>
+            {events.length>0 && (
+              <div className="flex items-center justify-between pt-1 border-t border-black/5">
+                <div className="text-xs text-slate-400">{events.filter(e=>!isImported(e.id)).length} neue · {events.filter(e=>isImported(e.id)).length} bereits importiert</div>
+                <button onClick={autoImport}
+                  className="px-4 py-1.5 text-xs font-bold transition-all"
+                  style={{borderRadius:30,background:'rgba(16,185,129,0.12)',color:'#10b981',border:'1px solid rgba(16,185,129,0.3)'}}>
+                  ⚡ Alle neuen sofort importieren ({events.filter(e=>!isImported(e.id)).length})
+                </button>
+              </div>
             )}
           </div>
 
@@ -3933,50 +4019,92 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
             <div className="text-center py-10 text-slate-400 text-sm">Klicke "Events laden" um Termine aus ChurchTools zu holen</div>
           )}
 
-          <div className="space-y-3">
-            {events.map(ev=>{
-              const calId = parseInt(ev.calendar?.domainIdentifier||'0');
-              const calName = ev.calendar?.title||'?';
-              const imp = isImported(ev.id);
-              const slotsCount = (ev.eventServices||[]).length;
-              return (
-                <div key={ev.id} className="glass rounded-2xl p-4" style={{opacity:imp?0.65:1}}>
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-semibold text-slate-800 text-sm">{ev.name}</span>
-                        <span className="pill text-xs" style={{background:'rgba(99,102,241,0.12)',color:'#6366f1'}}>{calName}</span>
-                        {imp && <span className="pill text-xs" style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>✓ Importiert</span>}
+          <div className="space-y-2">
+            {events
+              .filter(ev=>!calFilter || String(parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0))===calFilter)
+              .map(ev=>{
+                const calId = parseInt(ev.calendar?.domainIdentifier||ev.calendar?.id||0);
+                const calMap = getMap(calId);
+                const calName = ev.calendar?.title||ev.calendar?.name||'?';
+                const imp = isImported(ev.id);
+                const isExpanded = expandedEvent===ev.id;
+                const targetArea = (profiles||[]).find(pr=>pr.id===calMap.targetProfileId)?.label||'Aktueller Bereich';
+                return (
+                  <div key={ev.id} className="glass rounded-2xl overflow-hidden" style={{opacity:imp?0.7:1}}>
+                    {/* Event header */}
+                    <div className="flex items-start gap-3 p-4 cursor-pointer" onClick={()=>setExpandedEvent(isExpanded?null:ev.id)}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-semibold text-slate-800 text-sm">{ev.name}</span>
+                          <span className="pill text-xs" style={{background:'rgba(99,102,241,0.1)',color:'#6366f1'}}>{calName}</span>
+                          {imp
+                            ? <span className="pill text-xs" style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>✓ Importiert</span>
+                            : <span className="pill text-xs" style={{background:'rgba(248,113,113,0.12)',color:'#f87171'}}>Neu</span>
+                          }
+                        </div>
+                        <div className="text-xs text-slate-500">{fmtEvDate(ev.startDate)} · {evTimes(ev)}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">→ {targetArea}{calMap.planId ? ` · ${(ma.plaene||[]).find(p=>p.id===calMap.planId)?.name||'Plan'}`:''} · {(ev.eventServices||[]).length} Dienst{(ev.eventServices||[]).length!==1?'e':''}</div>
                       </div>
-                      <div className="text-xs text-slate-500">{fmtEvDate(ev.startDate)} · {fmtEvTime(ev.startDate)}{ev.endDate?'–'+fmtEvTime(ev.endDate):''}</div>
-                      {slotsCount>0 && <div className="text-xs text-slate-400 mt-1">{slotsCount} Dienst{slotsCount!==1?'e':''}</div>}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {!imp && onChange && (
+                          <button onClick={e=>{e.stopPropagation();openImportPreview(ev);}}
+                            className="px-3 py-1.5 text-xs font-bold transition-all"
+                            style={{borderRadius:20,background:'#6366f1',color:'#fff'}}>
+                            + Importieren
+                          </button>
+                        )}
+                        <button className="text-slate-400 text-xs px-1">{isExpanded?'▲':'▼'}</button>
+                      </div>
                     </div>
-                    {!imp && onChange && (
-                      <button onClick={()=>importEvent(ev)}
-                        className="flex-shrink-0 px-3 py-1.5 text-xs font-bold transition-all"
-                        style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
-                        + Importieren
-                      </button>
+
+                    {/* Expanded: slot preview */}
+                    {isExpanded && (
+                      <div className="border-t border-black/5 px-4 py-3 space-y-1.5" style={{background:'rgba(0,0,0,0.02)'}}>
+                        <div className="text-xs font-semibold text-slate-500 mb-2">Dienst-Slots in diesem Event:</div>
+                        {(ev.eventServices||[]).length===0 && <div className="text-xs text-slate-400 italic">Keine Dienste zugewiesen</div>}
+                        {(ev.eventServices||[]).map(es=>{
+                          const svc = services.find(s=>s.id===es.serviceId);
+                          const labelOverride = (calMap.serviceLabelOverrides||{})[String(es.serviceId)];
+                          const label = labelOverride || svc?.name || 'Dienst';
+                          const sg = svcGroups.find(g=>g.id===svc?.serviceGroupId);
+                          const sgMap = (calMap.serviceGroupMappings||[]).find(s=>s.ctGroupId===sg?.id);
+                          const maGruppe = (ma.gruppen||[]).find(g=>g.id===sgMap?.maGruppeId);
+                          const maPerson = es.personId ? (ma.personen||[]).find(mp=>mp.id===(cts.ctPersonIds||{})[String(es.personId)]) : null;
+                          const personNotImported = es.personId && !maPerson;
+                          return (
+                            <div key={es.id} className="flex items-center gap-2 flex-wrap text-xs py-1 border-b border-black/4 last:border-0">
+                              <span className="font-semibold text-slate-700 w-28 flex-shrink-0">{label}</span>
+                              {maGruppe
+                                ? <span className="pill" style={{background:'rgba(99,102,241,0.1)',color:'#6366f1'}}>{maGruppe.name}</span>
+                                : <span className="text-slate-300">keine Gruppe</span>}
+                              <span className="text-slate-300 mx-1">·</span>
+                              {maPerson
+                                ? <span className="pill" style={{background:'rgba(16,185,129,0.12)',color:'#10b981'}}>👤 {maPerson.name}</span>
+                                : personNotImported
+                                  ? <span className="pill" style={{background:'rgba(251,191,36,0.15)',color:'#d97706'}}>⚠ Person nicht importiert</span>
+                                  : <span className="text-slate-300">offen</span>}
+                            </div>
+                          );
+                        })}
+                        {!imp && onChange && (
+                          <div className="pt-2">
+                            <button onClick={()=>openImportPreview(ev)}
+                              className="px-4 py-1.5 text-xs font-bold transition-all"
+                              style={{borderRadius:20,background:'rgba(99,102,241,0.1)',color:'#6366f1',border:'1px solid rgba(99,102,241,0.25)'}}>
+                              + Mit Vorschau importieren →
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {/* Service slots preview */}
-                  {(ev.eventServices||[]).length>0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {(ev.eventServices||[]).slice(0,6).map(es=>{
-                        const svc=services.find(s=>s.id===es.serviceId);
-                        return <span key={es.id} className="pill text-xs" style={{background:'rgba(0,0,0,0.05)',color:'#64748b'}}>{svc?.name||'Dienst'}</span>;
-                      })}
-                      {(ev.eventServices||[]).length>6 && <span className="text-xs text-slate-400">+{(ev.eventServices||[]).length-6}</span>}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
       )}
 
-      {/* ── PERSONEN ── */}
+      {/* ══════════ PERSONEN ══════════ */}
       {tab==='personen' && !loadState.init && (
         <div className="space-y-4">
           <div className="flex gap-2 items-center">
@@ -3995,15 +4123,12 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
 
           <div className="space-y-2">
             {persons
-              .filter(p=>{
-                const name=`${p.firstName||''} ${p.lastName||''}`.toLowerCase();
-                return !personSearch||name.includes(personSearch.toLowerCase());
-              })
+              .filter(p=>{ const n=`${p.firstName||''} ${p.lastName||''}`.toLowerCase(); return !personSearch||n.includes(personSearch.toLowerCase()); })
               .map(p=>{
                 const imp = isPersonImported(p.id);
                 const maPersonId = (cts.ctPersonIds||{})[String(p.id)];
                 const maPerson = imp ? (ma.personen||[]).find(mp=>mp.id===maPersonId) : null;
-                const isEditing = editingMaPersonId === maPersonId;
+                const isEditing = editingMaPersonId===maPersonId;
                 return (
                   <div key={p.id} className="glass rounded-xl overflow-hidden">
                     <div className="px-4 py-3 flex items-center gap-3">
@@ -4031,9 +4156,8 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                         </button>
                       )}
                     </div>
-                    {/* Inline edit panel for imported persons */}
                     {isEditing && maPerson && (
-                      <div className="border-t border-black/5 px-4 py-4 space-y-3" style={{background:'rgba(99,102,241,0.03)'}}>
+                      <div className="border-t border-black/5 px-4 py-4 space-y-3" style={{background:'rgba(99,102,241,0.025)'}}>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Name</label>
@@ -4057,13 +4181,13 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                                 <button key={g.id} onClick={()=>{
                                   const newGIds=has?(maPerson.gruppenIds||[]).filter(x=>x!==g.id):[...(maPerson.gruppenIds||[]),g.id];
                                   onChangeShared&&onChangeShared(m=>({...m,personen:(m.personen||[]).map(pp=>pp.id===maPerson.id?{...pp,gruppenIds:newGIds}:pp)}));
-                                }}
-                                  className="px-2.5 py-1 text-xs font-semibold transition-all"
+                                }} className="px-2.5 py-1 text-xs font-semibold transition-all"
                                   style={{borderRadius:20,background:has?'rgba(99,102,241,0.15)':'rgba(0,0,0,0.06)',color:has?'#6366f1':'#64748b',border:has?'1px solid rgba(99,102,241,0.4)':'1px solid transparent'}}>
                                   {has?'✓ ':''}{g.name}
                                 </button>
                               );
                             })}
+                            {(ma.gruppen||[]).length===0 && <span className="text-xs text-slate-400 italic">Keine Gruppen vorhanden</span>}
                           </div>
                         </div>
                         <button onClick={()=>{
@@ -4078,22 +4202,132 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                     )}
                   </div>
                 );
-              })
-            }
+              })}
           </div>
         </div>
       )}
 
-      {/* ── PERSON IMPORT MODAL ── */}
+      {/* ══════════ EVENT IMPORT PREVIEW MODAL ══════════ */}
+      {previewSchicht && (
+        <div className="modal-overlay fixed inset-0 flex items-end sm:items-center justify-center z-50 px-0 sm:px-4"
+          style={{background:'rgba(0,0,0,0.6)'}} onClick={e=>{if(e.target===e.currentTarget)setPreviewSchicht(null);}}>
+          <div className="glass w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl glow overflow-hidden" style={{maxHeight:'90vh',display:'flex',flexDirection:'column'}}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-3 flex-shrink-0">
+              <div>
+                <h3 className="font-black text-lg grad">Import bearbeiten</h3>
+                <div className="text-xs text-slate-400 mt-0.5">Alles anpassen bevor du importierst</div>
+              </div>
+              <button onClick={()=>setPreviewSchicht(null)} className="text-slate-400 hover:text-slate-700"><SI p={IC.x} size={18}/></button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 pb-4 space-y-4">
+              {/* Titel + Datum + Zeit */}
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Titel</label>
+                  <input value={previewSchicht.titel} onChange={e=>setPreviewSchicht(ps=>({...ps,titel:e.target.value}))} className={"w-full "+INP}/>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Datum</label>
+                    <input type="date" value={previewSchicht.datum} onChange={e=>setPreviewSchicht(ps=>({...ps,datum:e.target.value}))} className={"w-full "+INP_SM}/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1.5">Uhrzeit</label>
+                    <input value={previewSchicht.zeit} onChange={e=>setPreviewSchicht(ps=>({...ps,zeit:e.target.value}))} placeholder="10:00–12:00" className={"w-full "+INP_SM}/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Zielbereich + Plan */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Zielbereich</label>
+                  <select value={previewSchicht.targetProfId||''} onChange={e=>setPreviewSchicht(ps=>({...ps,targetProfId:e.target.value}))} className={"w-full "+INP_SM}>
+                    <option value="">Aktueller Bereich</option>
+                    {(profiles||[]).map(pr=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 block mb-1.5">Plan</label>
+                  <select value={previewSchicht.planId||''} onChange={e=>setPreviewSchicht(ps=>({...ps,planId:e.target.value}))} className={"w-full "+INP_SM}>
+                    <option value="">Kein Plan</option>
+                    {(ma.plaene||[]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Slots */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dienst-Slots ({(previewSchicht.slots||[]).length})</label>
+                  <button onClick={addPreviewSlot} className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 transition-colors">+ Slot hinzufügen</button>
+                </div>
+                <div className="space-y-2">
+                  {(previewSchicht.slots||[]).map((slot,i)=>(
+                    <div key={slot.id} className="rounded-xl p-3 space-y-2" style={{background:'rgba(0,0,0,0.04)'}}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 font-semibold w-4 flex-shrink-0">{i+1}</span>
+                        <input value={slot.label} onChange={e=>updPreviewSlot(slot.id,{label:e.target.value})}
+                          placeholder="Dienst-Name…" className={"flex-1 "+INP_SM}/>
+                        <button onClick={()=>removePreviewSlot(slot.id)} className="text-slate-300 hover:text-red-400 transition-colors flex-shrink-0">
+                          <SI p={IC.trash} size={13}/>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pl-6">
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Gruppe</label>
+                          <select value={slot.gruppeId||''} onChange={e=>updPreviewSlot(slot.id,{gruppeId:e.target.value})} className={"w-full "+INP_SM}>
+                            <option value="">Keine Gruppe</option>
+                            {(ma.gruppen||[]).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Person</label>
+                          <select value={slot.personId||''} onChange={e=>updPreviewSlot(slot.id,{personId:e.target.value})} className={"w-full "+INP_SM}>
+                            <option value="">Offen</option>
+                            {(ma.personen||[]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(previewSchicht.slots||[]).length===0 && (
+                    <div className="text-center py-4 text-slate-400 text-xs">Keine Slots — klicke "+ Slot hinzufügen"</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-2 px-6 py-4 border-t border-black/5 flex-shrink-0">
+              <button onClick={confirmImport}
+                className="flex-1 text-white font-bold py-3 text-sm transition-all"
+                style={{borderRadius:30,background:'#000'}}>
+                ✓ Importieren
+              </button>
+              <button onClick={()=>setPreviewSchicht(null)}
+                className="px-5 py-3 text-slate-400 text-sm font-semibold transition-all hover:bg-black/5"
+                style={{borderRadius:30}}>
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ PERSON IMPORT MODAL ══════════ */}
       {importModal && (
         <div className="modal-overlay fixed inset-0 flex items-center justify-center z-50 px-4"
           style={{background:'rgba(0,0,0,0.55)'}} onClick={e=>{if(e.target===e.currentTarget)setImportModal(null);}}>
           <div className="glass rounded-3xl p-6 w-full max-w-sm space-y-4 glow">
             <div className="flex items-center justify-between">
               <h3 className="font-black text-lg grad">Person importieren</h3>
-              <button onClick={()=>setImportModal(null)} className="text-slate-400 hover:text-slate-700 transition-colors"><SI p={IC.x} size={18}/></button>
+              <button onClick={()=>setImportModal(null)} className="text-slate-400 hover:text-slate-700"><SI p={IC.x} size={18}/></button>
             </div>
-            <div className="glass rounded-xl px-4 py-3 flex items-center gap-3" style={{background:'rgba(99,102,241,0.05)'}}>
+            <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{background:'rgba(99,102,241,0.07)'}}>
               <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{background:'#6366f1'}}>
                 {(importModal.firstName||'?')[0]}{(importModal.lastName||'')[0]}
               </div>
@@ -4102,8 +4336,6 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                 {importModal.email && <div className="text-xs text-slate-400">{importModal.email}</div>}
               </div>
             </div>
-
-            {/* Groups */}
             <div>
               <label className="text-slate-500 text-xs font-semibold block mb-2">Gruppen zuweisen</label>
               <div className="space-y-1 max-h-36 overflow-y-auto">
@@ -4119,15 +4351,12 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                 {(ma.gruppen||[]).length===0 && <div className="text-xs text-slate-400 italic">Keine Gruppen vorhanden</div>}
               </div>
             </div>
-
-            {/* Create login toggle */}
             <div className="flex items-center justify-between py-1">
               <span className="text-sm text-slate-700 font-semibold">App-Account erstellen</span>
               <button onClick={()=>setImpForm(f=>({...f,createLogin:!f.createLogin}))}
                 className={"toggle "+(impForm.createLogin?'on':'')}
                 style={{background:impForm.createLogin?'#6366f1':'rgba(0,0,0,0.12)'}}/>
             </div>
-
             {impForm.createLogin && (
               <div className="space-y-3 border-t border-black/5 pt-3">
                 <div>
@@ -4145,7 +4374,6 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
                 </div>
               </div>
             )}
-
             <div className="flex gap-2 pt-1">
               <button onClick={confirmImportPerson}
                 disabled={impForm.createLogin && !impForm.pin.trim()}
