@@ -78,7 +78,26 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, Component } = React;
+
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  render() {
+    if (this.state.error) {
+      return React.createElement('div', {
+        style: { padding: 24, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, margin: 16 }
+      },
+        React.createElement('p', { style: { fontWeight: 700, color: '#dc2626', marginBottom: 8 } }, '⚠ Fehler in Komponente'),
+        React.createElement('pre', { style: { fontSize: 12, color: '#991b1b', whiteSpace: 'pre-wrap', wordBreak: 'break-word' } },
+          this.state.error?.message + '\n\n' + (this.state.error?.stack || '').slice(0, 600)
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Session token helpers ────────────────────────────────────────────────────
 const getSessToken = () => { try { return sessionStorage.getItem('k21-sess') || ''; } catch { return ''; } };
@@ -5383,10 +5402,10 @@ const App = () => {
         {!isGesamt && page==='personen'         && <PersonenView       ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
         {!isGesamt && page==='gruppen'          && <GruppenView        ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={canEdit?updateSharedMa:null} toast={toast} allowedGroups={allowedGroups}/>}
         {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
-        {!isGesamt && page==='verfuegbarkeit'   && <VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/>}
+        {!isGesamt && page==='verfuegbarkeit'   && <ErrorBoundary><VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/></ErrorBoundary>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
         {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
-        {!isGesamt && page==='churchtools'  && isAdmin      && <CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/>}
+        {!isGesamt && page==='churchtools'  && isAdmin      && <ErrorBoundary><CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/></ErrorBoundary>}
       </main>
       {headerEdit && (
         <Modal title={headerEdit==='new'?'Neuer Bereich':'Bereich umbenennen'} onClose={()=>setHeaderEdit(null)}>
