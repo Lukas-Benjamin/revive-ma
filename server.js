@@ -178,7 +178,12 @@ app.get('/api/ma', async (req, res) => {
   const profile = req.query.profile;
   if (!profile) return res.status(400).json({error:'missing profile'});
   const doc = await fsGetDoc(profile, 'ma');
-  if (doc === null) return res.status(503).json({error:'Firestore nicht erreichbar'});
+  // null = doc not yet created (new profile) → return empty; only 503 if truly unreachable
+  if (doc === null) {
+    const token = await getToken();
+    if (!token) return res.status(503).json({error:'Firestore nicht erreichbar'});
+    return res.json({});
+  }
   res.json(doc);
 });
 
@@ -193,7 +198,11 @@ app.post('/api/ma', authMiddleware, async (req, res) => {
 // GET  /api/shared-ma   → read shared/ma doc
 app.get('/api/shared-ma', async (req, res) => {
   const doc = await fsGetDoc('shared', 'ma');
-  if (doc === null) return res.status(503).json({error:'Firestore nicht erreichbar'});
+  if (doc === null) {
+    const token = await getToken();
+    if (!token) return res.status(503).json({error:'Firestore nicht erreichbar'});
+    return res.json({});
+  }
   res.json(doc);
 });
 
