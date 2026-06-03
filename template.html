@@ -760,6 +760,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 // VERFÜGBARKEIT VIEW  (Abwesenheiten + Ausnahmen + Dienstpräferenzen)
 // ═══════════════════════════════════════════════════════════════════════════════
 const VerfuegbarkeitView = ({ ma, onChange, onChangeMa, toast }) => {
+  const { confirm: confirmDlg, confirmEl } = useConfirm();
   // --- Abwesenheiten state ---
   const [absModal,   setAbsModal]   = useState(false);
   const [absForm,    setAbsForm]    = useState({ personId:'', from:'', to:'', reason:'' });
@@ -814,6 +815,7 @@ const VerfuegbarkeitView = ({ ma, onChange, onChangeMa, toast }) => {
 
   return (
     <div className="space-y-5 up">
+      {confirmEl}
       <div>
         <h1 className="text-xl font-bold grad">Verfügbarkeit</h1>
         <p className="text-slate-500 text-sm mt-0.5">Abwesenheiten, Ausnahmen &amp; Dienstpräferenzen</p>
@@ -4065,6 +4067,7 @@ const AbfrageForm = ({ token }) => {
 // CHURCHTOOLS VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
 const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForProfile, toast }) => {
+  const { confirm: confirmDlg, confirmEl } = useConfirm();
   const [tab, setTab] = useState('einstellungen');
   const [calendars, setCalendars] = useState([]);
   const [svcGroups, setSvcGroups] = useState([]);
@@ -4378,6 +4381,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
 
   return (
     <div className="space-y-5">
+      {confirmEl}
       {/* Sub-tabs */}
       <div className="flex gap-1" style={{borderBottom:'2px solid rgba(0,0,0,0.08)'}}>
         {SUBTABS.map(t=>(
