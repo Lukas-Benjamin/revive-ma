@@ -5260,7 +5260,15 @@ const App = () => {
   };
 
   // Merged view used by all child components
-  const fullMa = { ...ma, personen: sharedMa.personen||[], konflikte: sharedMa.konflikte||[], praeferenzen: sharedMa.praeferenzen||[], abwesenheiten: ma.abwesenheiten||[] };
+  const fullMa = {
+    gruppen: [], vorlagen: [], schichten: [], plaene: [], tauschAnfragen: [],
+    abwesenheiten: [], ctSettings: { calendarMappings:[], importedEventIds:[], ctPersonIds:{} },
+    ...ma,
+    personen:      sharedMa.personen||[],
+    konflikte:     sharedMa.konflikte||[],
+    praeferenzen:  sharedMa.praeferenzen||[],
+    abwesenheiten: ma.abwesenheiten||[],
+  };
 
   const abfrageToken = new URLSearchParams(window.location.search).get('abfrage');
   if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
