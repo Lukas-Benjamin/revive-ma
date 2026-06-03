@@ -242,20 +242,19 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
   if (name.toLowerCase() === adminName.toLowerCase()) {
     const adminHash = adminDoc?.adminPinHash;
     const adminPin  = adminDoc?.adminPin; // legacy plaintext
-    if (!adminHash && !adminPin) {
-      // No admin PIN set yet → first-time setup
-      return res.status(401).json({ error: 'Kein Admin-PIN konfiguriert. Bitte zuerst einrichten.' });
-    }
+    const DEFAULT_OWNER_PIN = 'K21ADMIN'; // original hardcoded fallback
     let ok = false;
     if (adminHash) {
       ok = await bcrypt.compare(String(pin), adminHash);
     } else if (adminPin) {
       ok = String(pin) === String(adminPin);
       if (ok) {
-        // Migrate to hash
         const hash = await bcrypt.hash(String(adminPin), SALT_ROUNDS);
         await fsSet('config', 'auth', { ...adminDoc, adminPinHash: hash, adminPin: null });
       }
+    } else {
+      // No PIN configured yet — accept the default hardcoded owner PIN
+      ok = String(pin) === DEFAULT_OWNER_PIN;
     }
     if (!ok) return res.status(401).json({ error: 'Falscher PIN' });
     return res.json({ ok: true, role: 'admin', name: adminName, token: createSession({ id: 'admin', name: adminName, role: 'admin' }) });
