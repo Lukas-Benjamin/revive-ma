@@ -80,6 +80,26 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
+// ─── Session token helpers ────────────────────────────────────────────────────
+const getSessToken = () => { try { return sessionStorage.getItem('k21-sess') || ''; } catch { return ''; } };
+const setSessToken = t => { try { t ? sessionStorage.setItem('k21-sess', t) : sessionStorage.removeItem('k21-sess'); } catch {} };
+const aFetch = (url, opts = {}) => fetch(url, { ...opts, headers: { ...(opts.headers||{}), 'X-Session': getSessToken() } });
+
+// ─── Write with retry ─────────────────────────────────────────────────────────
+const writeFetch = async (url, opts = {}, retries = 3, delayMs = 1500) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const r = await aFetch(url, opts);
+      if (r.ok) return r;
+      if (r.status === 401) throw new Error('Sitzung abgelaufen');
+    } catch(e) {
+      if (e.message === 'Sitzung abgelaufen') throw e;
+      if (i < retries - 1) await new Promise(res => setTimeout(res, delayMs));
+      else throw e;
+    }
+  }
+};
+
 // ─── Icons ───────────────────────────────────────────────────────────────────
 const SI = ({ p, size=16, stroke=2 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -3253,7 +3273,7 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
     if (!pin) { toast('Bitte PIN eingeben','error'); return; }
     if (pin !== pin2) { toast('PINs stimmen nicht überein','error'); return; }
     try {
-      const r = await fetch('/api/admin-pin', {
+      const r = await aFetch('/api/admin-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
@@ -3429,9 +3449,9 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
     if (!data.name||!data.pin) return;
     try {
       if (modal==='add') {
-        await fetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        await writeFetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
       } else {
-        await fetch(`/api/users/${modal.user.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        await writeFetch(`/api/users/${modal.user.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
       }
     } catch(e) { console.warn('save user error:', e.message); }
     // Note: Firestore direct write omits pin so hashes stay server-managed
@@ -3444,17 +3464,17 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
   const del = async u => {
     const ok = await confirmDlg(`${u.name} wirklich löschen?`);
     if (!ok) return;
-    await fetch(`/api/users/${u.id}?c=k21-users`,{method:'DELETE'}).catch(()=>{});
+    await aFetch(`/api/users/${u.id}?c=k21-users`,{method:'DELETE'}).catch(()=>{});
     adb.collection('k21-users').doc(u.id).delete().catch(()=>{});
   };
 
   const changeMyPin = async () => {
     if (!myPin.trim()) return;
     if (currentUser?.role === 'owner' || currentUser?.role === 'admin') {
-      await fetch('/api/admin-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(console.warn);
+      await aFetch('/api/admin-pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(console.warn);
     } else {
       // PUT sends pin as plaintext → server hashes it via bcryptjs
-      await fetch(`/api/users/${currentUser.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(console.warn);
+      await aFetch(`/api/users/${currentUser.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:myPin.trim()})}).catch(console.warn);
     }
     onUpdateUser({...currentUser});
     setMyPin(''); setPinOK(true); setTimeout(()=>setPinOK(false),2500);
@@ -3756,6 +3776,7 @@ const LoginScreen = ({ onLogin }) => {
       });
       const d = await r.json();
       if (r.ok && d.ok) {
+        try { setSessToken(d.token || ''); } catch {}
         failRef.current = 0;
         const role = d.role || 'viewer';
         const isAdmin = role === 'admin' || role === 'owner';
@@ -4060,7 +4081,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
     if (eventDetails[key]) return eventDetails[key];
     setLoad(`ev_${key}`, true);
     try {
-      const r = await fetch(`/api/ct/events/${evId}`);
+      const r = await aFetch(`/api/ct/events/${evId}`);
       const d = await r.json();
       if (d.data) {
         setEventDetails(prev => ({...prev, [key]: d.data}));
@@ -4106,9 +4127,9 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
   useEffect(()=>{
     setLoad('init',true);
     Promise.all([
-      fetch('/api/ct/calendars').then(r=>r.json()),
-      fetch('/api/ct/servicegroups').then(r=>r.json()),
-      fetch('/api/ct/services?limit=200').then(r=>r.json()),
+      aFetch('/api/ct/calendars').then(r=>r.json()),
+      aFetch('/api/ct/servicegroups').then(r=>r.json()),
+      aFetch('/api/ct/services?limit=200').then(r=>r.json()),
     ]).then(([c,sg,sv])=>{
       setCalendars(c.data||[]);
       setSvcGroups(sg.data||[]);
@@ -4134,7 +4155,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
     const ids=enabledIds.length?enabledIds:calendars.map(c=>c.id);
     const p=new URLSearchParams({from:fromDate,to:toDate});
     ids.forEach(id=>p.append('calendar_ids[]',id));
-    fetch(`/api/ct/events?${p}`).then(r=>r.json())
+    aFetch(`/api/ct/events?${p}`).then(r=>r.json())
       .then(d=>setEvents(d.data||[]))
       .catch(()=>toast('Events konnten nicht geladen werden','error'))
       .finally(()=>setLoad('events',false));
@@ -4143,7 +4164,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
 
   const loadPersons = () => {
     setLoad('persons',true);
-    fetch('/api/ct/persons?limit=200').then(r=>r.json())
+    aFetch('/api/ct/persons?limit=200').then(r=>r.json())
       .then(d=>setPersons(d.data||[]))
       .catch(()=>toast('Personen konnten nicht geladen werden','error'))
       .finally(()=>setLoad('persons',false));
@@ -4323,7 +4344,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
     // Create login account in k21-users if requested
     if(impForm.createLogin && impForm.pin.trim()) {
       const loginData = { name, pin:impForm.pin.trim(), role:impForm.rolle, areas:[], areaAccess:{} };
-      await fetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(loginData)}).catch(()=>{});
+      await writeFetch('/api/users?c=k21-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(loginData)}).catch(()=>{});
     }
 
     toast(`${name} importiert${impForm.createLogin?' + Account erstellt':''} ✓`);
@@ -5104,7 +5125,7 @@ const App = () => {
   };
 
   const login  = user => { setCurrentUser(user); localStorage.setItem('k21-user', user ? JSON.stringify(user) : 'guest'); };
-  const logout = () => { setCurrentUser(undefined); localStorage.removeItem('k21-user'); setPage('dienstplan'); };
+  const logout = () => { setSessToken(''); aFetch('/api/logout', {method:'POST'}).catch(()=>{}); setCurrentUser(undefined); localStorage.removeItem('k21-user'); setPage('dienstplan'); };
   const updateCurrentUser = user => { setCurrentUser(user); localStorage.setItem('k21-user', JSON.stringify(user)); };
 
   const saveHeaderEdit = () => {
@@ -5153,7 +5174,7 @@ const App = () => {
   const writeMa = data => {
     setSyncState('saving');
     localStorage.setItem(`ma-data-${profile}`, JSON.stringify(data));
-    fetch(`/api/ma?profile=${encodeURIComponent(profile)}`, {
+    writeFetch(`/api/ma?profile=${encodeURIComponent(profile)}`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({data}),
@@ -5195,7 +5216,7 @@ const App = () => {
   // Uses server-side proxy to bypass expired Firestore security rules
   const writeSharedMa = data => {
     localStorage.setItem('ma-data-shared', JSON.stringify(data));
-    fetch('/api/shared-ma', {
+    writeFetch('/api/shared-ma', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({data}),
@@ -5225,12 +5246,12 @@ const App = () => {
   const writeMaForProfile = async (targetProfileId, updater) => {
     try {
       // Read current data via server proxy
-      const r = await fetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`);
+      const r = await aFetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`);
       const doc = await r.json();
       const existing = doc?.data || DEFAULT_MA();
       const next = typeof updater==='function' ? updater(existing) : updater;
-      // Write via server proxy
-      await fetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`, {
+      // Write via server proxy (with retry)
+      await writeFetch(`/api/ma?profile=${encodeURIComponent(targetProfileId)}`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({data: next}),
