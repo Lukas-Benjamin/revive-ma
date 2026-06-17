@@ -5143,7 +5143,6 @@ const DsgvoConsent = ({ appName, onAccept }) => (
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = () => {
   const { confirm: confirmDlg, confirmEl: appConfirmEl } = useConfirm();
-  const [dsgvoOk, setDsgvoOk] = useState(() => !!localStorage.getItem(DSGVO_KEY));
   const [currentUser, setCurrentUser] = useState(() => {
     const s = localStorage.getItem('k21-user');
     if (!s) return undefined;
@@ -5349,8 +5348,17 @@ const App = () => {
 
   const abfrageToken = new URLSearchParams(window.location.search).get('abfrage');
   if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
-  if (!dsgvoOk) return <DsgvoConsent appName="K21 Dienstplan" onAccept={() => { localStorage.setItem(DSGVO_KEY,'1'); setDsgvoOk(true); }}/>;
-  if (currentUser === undefined) return <LoginScreen onLogin={login}/>;
+  if (currentUser === undefined) return <LoginScreen onLogin={(u) => login({...u, dsgvoConsent: u.dsgvoConsent || (u.id==='admin' && !!localStorage.getItem('k21-dsgvo-admin'))})}/>;
+
+  const acceptDsgvo = async () => {
+    if (currentUser.id === 'admin') {
+      localStorage.setItem('k21-dsgvo-admin', '1');
+    } else {
+      await aFetch(`/api/users/${currentUser.id}?c=k21-users`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dsgvoConsent:true}) });
+    }
+    login({...currentUser, dsgvoConsent: true});
+  };
+  if (!currentUser.dsgvoConsent) return <DsgvoConsent appName="K21 Dienstplan" onAccept={acceptDsgvo}/>;
 
   const TABS = isGesamt ? [
     { id:'dienstplan', label:'Dienstplan', icon:IC.calendar },

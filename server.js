@@ -297,6 +297,7 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
     areaAccess: user.areaAccess || {},
     areaGroups: user.areaGroups || {},
     areas: user.areas || [],
+    dsgvoConsent: user.dsgvoConsent || false,
     token: createSession({ id: user.id, name: user.name, role: user.role || 'user' }),
   });
 });
