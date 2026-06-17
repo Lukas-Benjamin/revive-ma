@@ -71,15 +71,16 @@ function authMiddleware(req, res, next) {
 }
 
 // ─── Firebase config ────────────────────────────────────────────────────────
-const API_KEY    = process.env.FIREBASE_API_KEY    || 'AIzaSyAB9ugtPhwbXTJc9mZia6a_x54LEYLz5PE';
+const API_KEY    = process.env.FIREBASE_API_KEY;
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'r3zahlen';
+if (!API_KEY) { console.error('FEHLER: FIREBASE_API_KEY fehlt in .env'); process.exit(1); }
 const firebaseConfig = JSON.stringify({
   apiKey:            API_KEY,
-  authDomain:        process.env.FIREBASE_AUTH_DOMAIN        || 'r3zahlen.firebaseapp.com',
+  authDomain:        process.env.FIREBASE_AUTH_DOMAIN        || `${PROJECT_ID}.firebaseapp.com`,
   projectId:         PROJECT_ID,
-  storageBucket:     process.env.FIREBASE_STORAGE_BUCKET     || 'r3zahlen.firebasestorage.app',
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID|| '1071865171603',
-  appId:             process.env.FIREBASE_APP_ID             || '1:1071865171603:web:399ef56359d043e7544766',
+  storageBucket:     process.env.FIREBASE_STORAGE_BUCKET     || `${PROJECT_ID}.firebasestorage.app`,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID|| '',
+  appId:             process.env.FIREBASE_APP_ID             || '',
 });
 
 // ─── Server-side Firestore proxy (bypasses security rules via anon auth) ────
