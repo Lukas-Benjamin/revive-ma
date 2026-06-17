@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>K21 Dienstplan</title>
   <style>
     @font-face { font-family: 'Gotham'; src: url('/fonts/GothamBold.otf') format('opentype'); font-weight: 900; font-style: normal; font-display: swap; }
@@ -75,12 +75,13 @@
     .modal-overlay { animation: fadeIn .15s ease; }
     /* ── Mobile ── */
     .mob-nav { display:none; }
-    button { -webkit-tap-highlight-color:transparent; }
+    button { -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
     @media (max-width:639px){
       .desk-nav { display:none!important; }
       .mob-nav { display:flex!important; overflow-x:auto; scrollbar-width:none; }
       .mob-nav::-webkit-scrollbar { display:none; }
       .mob-main-pad { padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))!important; }
+      input, textarea, select { font-size:16px!important; }
     }
   </style>
 </head>
