@@ -73,6 +73,15 @@
     .toggle::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .2s; }
     .toggle.on::after { transform: translateX(16px); }
     .modal-overlay { animation: fadeIn .15s ease; }
+    /* ── Mobile ── */
+    .mob-nav { display:none; }
+    button { -webkit-tap-highlight-color:transparent; }
+    @media (max-width:639px){
+      .desk-nav { display:none!important; }
+      .mob-nav { display:flex!important; overflow-x:auto; scrollbar-width:none; }
+      .mob-nav::-webkit-scrollbar { display:none; }
+      .mob-main-pad { padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))!important; }
+    }
   </style>
 </head>
 <body>
@@ -5444,7 +5453,7 @@ const App = () => {
         </div>
 
         {/* ── Row 2: Navigation tabs (centered) ── */}
-        <div style={{borderTop:'1px solid rgba(255,255,255,0.06)'}}>
+        <div className="desk-nav" style={{borderTop:'1px solid rgba(255,255,255,0.06)'}}>
           <div className="max-w-4xl mx-auto px-4 py-2 flex justify-center">
             <nav className="flex gap-1 flex-wrap justify-center">
               {TABS.map(t => (
@@ -5463,7 +5472,7 @@ const App = () => {
           </div>
         </div>
       </header>
-      <main className="max-w-4xl mx-auto px-4 py-6 pb-16">
+      <main className="mob-main-pad max-w-4xl mx-auto px-4 py-6 pb-16">
         {isGesamt && page==='dienstplan' && <GesamtDienstplanView profiles={profiles}/>}
         {!isGesamt && page==='dienstplan'    && <DienstplanView ma={fullMa} onChange={canEdit?updateMa:null} onTausch={currentUser?updateMa:null} toast={toast} allowedGroups={allowedGroups} currentUser={currentUser}/>}
         {!isGesamt && page==='personen'         && <PersonenView       ma={fullMa} onChange={p.edit?updateSharedMa:null} toast={toast} profile={profile} allowedGroups={allowedGroups}/>}
@@ -5508,6 +5517,15 @@ const App = () => {
         </Modal>
       )}
       {appConfirmEl}
+      {/* Mobile bottom nav */}
+      <nav className="mob-nav" style={{position:'fixed',bottom:0,left:0,right:0,zIndex:200,background:'#000',borderTop:'1px solid rgba(255,255,255,0.1)',paddingBottom:'env(safe-area-inset-bottom,0)'}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setPage(t.id)} style={{flex:1,minWidth:52,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'8px 4px',minHeight:58,color:page===t.id?'#fff':'rgba(255,255,255,0.4)',background:'transparent',border:'none',cursor:'pointer',gap:2}}>
+            <SI p={t.icon} size={18}/>
+            <span style={{fontSize:9,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',maxWidth:52,textOverflow:'ellipsis'}}>{t.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 };
