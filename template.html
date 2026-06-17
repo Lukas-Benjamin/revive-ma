@@ -3253,11 +3253,12 @@ const GesamtDienstplanView = ({ profiles }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin }) => {
+const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin, appSettings, saveAppSettings }) => {
   const { confirm: confirmDlg, confirmEl } = useConfirm();
   const [pin,    setPin]    = useState('');
   const [pin2,   setPin2]   = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [appNameInput, setAppNameInput] = useState((appSettings && appSettings.appName) || '');
 
   // Bereiche-State (admin only)
   const [bName,      setBName]    = useState('');
@@ -3343,6 +3344,18 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
       <div>
         <h1 className="text-xl font-bold grad">Einstellungen</h1>
         <p className="text-slate-500 text-sm mt-0.5">App-Konfiguration & Datenverwaltung</p>
+      </div>
+
+      {/* App-Name */}
+      <div className="glass rounded-2xl p-5 glow space-y-3">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Allgemein</p>
+        <label className="text-slate-400 text-xs block">App-Name</label>
+        <div className="flex gap-2">
+          <input value={appNameInput} onChange={e=>setAppNameInput(e.target.value)} placeholder="z.B. Dienstplan" className={"flex-1 "+INP}/>
+          <button onClick={()=>{ if (saveAppSettings) saveAppSettings({...(appSettings||{}), appName:appNameInput.trim()||'Dienstplan'}); toast('Gespeichert ✓'); }}
+            className="px-4 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>Speichern</button>
+        </div>
+        <p className="text-xs text-slate-400">Wird oben im Header angezeigt. Standorte/Bereiche verwaltest du weiter unten.</p>
       </div>
 
       {/* PIN */}
@@ -5109,6 +5122,7 @@ const App = () => {
   });
   const [profiles,   setProfiles]   = useState(DEFAULT_PROFILES);
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
+  const [appSettings, setAppSettings] = useState({ appName: 'Dienstplan' });
   const [headerEdit,      setHeaderEdit]      = useState(null);
   const [headerEditName,  setHeaderEditName]  = useState('');
   const [headerEditColor, setHeaderEditColor] = useState('#06b6d4');
@@ -5130,6 +5144,16 @@ const App = () => {
       })
       .catch(() => {});
   }, []);
+
+  // Load app settings (app name) — realtime
+  useEffect(() => {
+    const unsub = adb.collection('config').doc('app-settings').onSnapshot(snap => {
+      const d = snap.data()?.data;
+      if (d) setAppSettings({ appName: 'Dienstplan', ...d });
+    }, ()=>{});
+    return () => unsub();
+  }, []);
+  const saveAppSettings = (s) => { setAppSettings(s); adb.collection('config').doc('app-settings').set({ data: s }).catch(()=>{}); };
 
   const p           = perms(currentUser);
   const isAdmin     = p.settings;
@@ -5322,7 +5346,7 @@ const App = () => {
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28">
             <img src="/logo.png" style={{width:30,height:30,filter:'invert(1)',mixBlendMode:'screen'}} alt="K21"/>
             <div className="hidden sm:block">
-              <div style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>DIENSTPLAN</div>
+              <div style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:12,color:'#ffffff',lineHeight:1,letterSpacing:'-0.03em'}}>{(appSettings.appName||'DIENSTPLAN').toUpperCase()}</div>
             </div>
           </div>
 
@@ -5408,7 +5432,7 @@ const App = () => {
         {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='verfuegbarkeit'   && <ErrorBoundary><VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/></ErrorBoundary>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
-        {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin}/>}
+        {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin} appSettings={appSettings} saveAppSettings={saveAppSettings}/>}
         {!isGesamt && page==='churchtools'  && isAdmin      && <ErrorBoundary><CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/></ErrorBoundary>}
       </main>
       {headerEdit && (
