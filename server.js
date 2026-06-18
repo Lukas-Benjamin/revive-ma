@@ -362,6 +362,33 @@ app.post('/api/admin-pin', async (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/change-pin  { oldPin, newPin }
+app.post('/api/change-pin', authMiddleware, async (req, res) => {
+  try {
+    const { oldPin, newPin } = req.body || {};
+    if (!oldPin || !newPin) return res.status(400).json({ error: 'Alter und neuer PIN erforderlich' });
+    const newStr = String(newPin).trim();
+    if (newStr.length < 4) return res.status(400).json({ error: 'PIN muss mind. 4 Zeichen haben' });
+    if (req.user.id === 'admin') {
+      const authDoc = await fsGetDoc('config', 'auth') || {};
+      const stored = authDoc.adminPinHash || authDoc.adminPin || null;
+      const ok = stored
+        ? (stored.startsWith('$2') ? await bcrypt.compare(String(oldPin), stored) : String(oldPin) === stored)
+        : String(oldPin) === 'K21ADMIN';
+      if (!ok) return res.status(401).json({ error: 'Alter PIN ist nicht korrekt' });
+      await fsSet('config', 'auth', { ...authDoc, adminPinHash: await bcrypt.hash(newStr, SALT_ROUNDS), adminPin: null });
+    } else {
+      const u = await fsGetDoc('k21-users', req.user.id);
+      if (!u) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      const stored = u.pinHash || (u.pin != null ? String(u.pin) : '');
+      const ok = stored.startsWith('$2') ? await bcrypt.compare(String(oldPin), stored) : stored === String(oldPin);
+      if (!ok) return res.status(401).json({ error: 'Alter PIN ist nicht korrekt' });
+      await fsSet('k21-users', req.user.id, { ...u, pinHash: await bcrypt.hash(newStr, SALT_ROUNDS), pin: null });
+    }
+    res.json({ ok: true });
+  } catch(e) { console.error('change-pin:', e.message); res.status(500).json({ error: 'Fehler beim PIN-Ändern' }); }
+});
+
 // ─── Build HTML ──────────────────────────────────────────────────────────────
 let compiledHtml;
 try {

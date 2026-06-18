@@ -83,6 +83,10 @@
       .mob-main-pad { padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))!important; }
       input, textarea, select { font-size:16px!important; }
     }
+    @media (min-width:640px){
+      .tutorial-overlay { align-items:center!important; padding:20px!important; }
+      .tutorial-panel { border-radius:20px!important; }
+    }
   </style>
 </head>
 <body>
@@ -5162,6 +5166,9 @@ const App = () => {
   const [profiles,   setProfiles]   = useState(DEFAULT_PROFILES);
   const [profile,   setProfile]   = useState(() => localStorage.getItem('ma-profile')||'revive');
   const [appSettings, setAppSettings] = useState({ appName: 'Dienstplan' });
+  const [showPinChange, setShowPinChange] = useState(false);
+  const [showTutorial, setShowTutorial]   = useState(false);
+  const TUTORIAL_KEY = 'k21-tutorial-ma-v1';
   const [headerEdit,      setHeaderEdit]      = useState(null);
   const [headerEditName,  setHeaderEditName]  = useState('');
   const [headerEditColor, setHeaderEditColor] = useState('#06b6d4');
@@ -5198,6 +5205,28 @@ const App = () => {
   const isAdmin     = p.settings;
   const isGesamt    = profile === '__gesamt__';
   const canEdit     = !isGesamt && p.edit && getAreaAccess(currentUser, profile) === 'edit';
+
+  const hasDsgvo = !!currentUser?.dsgvoConsent;
+  useEffect(() => {
+    if (hasDsgvo && !localStorage.getItem(TUTORIAL_KEY)) setShowTutorial(true);
+  }, [hasDsgvo]);
+
+  const closeTutorial = () => { localStorage.setItem(TUTORIAL_KEY,'1'); setShowTutorial(false); };
+
+  const tutorialSections = [
+    { id:'plan',   emoji:'📅', title:'Dienstplan',        items:['Zeigt den aktuellen Dienstplan für dein Team','Tippe auf einen Slot um Details zu sehen oder zu tauschen'] },
+    { id:'verfug', emoji:'✅', title:'Verfügbarkeit',     items:['Trage deine Verfügbarkeit ein damit der Plan optimiert werden kann','Sperrzeiten und Präferenzen pro Woche setzen'] },
+    ...(canEdit ? [
+      { id:'pers',   emoji:'👤', title:'Personen',          items:['Mitarbeiterprofile, Qualifikationen und Kontaktdaten verwalten','Gruppenzugehörigkeiten und Dienstreihenfolgen festlegen'] },
+      { id:'grupp',  emoji:'👥', title:'Gruppen',           items:['Teams konfigurieren und Mitglieder zuweisen','Dienst-Reihenfolgen und Mindestbesetzung festlegen'] },
+      { id:'vorlag', emoji:'📋', title:'Vorlagen',          items:['Standardpläne für wiederkehrende Wochen anlegen','Spart Zeit beim Erstellen neuer Dienstpläne'] },
+    ] : []),
+    ...(isAdmin ? [
+      { id:'einst',  emoji:'⚙️', title:'Einstellungen',    items:['App-Name, Bereiche und Standorte konfigurieren','Benutzerberechtigungen und Rollen verwalten'] },
+      { id:'ct',     emoji:'🔄', title:'ChurchTools',       items:['Personen und Gruppen aus ChurchTools synchronisieren','Einmalig CT-Token in Einstellungen hinterlegen'] },
+    ] : []),
+    { id:'pin', emoji:'🔑', title:'PIN ändern', items:['Klicke auf das Schlüssel-Symbol neben dem Abmelden-Button'] },
+  ];
   const canDel      = p.del;
   const canSettings = p.settings;
   const canProfiles = p.profiles;
@@ -5449,6 +5478,7 @@ const App = () => {
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28 justify-end">
             <SyncDot state={syncState}/>
             <span className="pill text-xs" style={{borderRadius:30, background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? currentUser.name.split(' ')[0] : 'Gast'}</span>
+            <button onClick={()=>setShowPinChange(true)} title="PIN ändern" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.key} size={14}/></button>
             <button onClick={logout} title="Abmelden" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.logout} size={14}/></button>
           </div>
         </div>
@@ -5518,6 +5548,8 @@ const App = () => {
         </Modal>
       )}
       {appConfirmEl}
+      {showPinChange && <PinChangeModal onClose={()=>setShowPinChange(false)} onToast={t=>toast(t)}/>}
+      {showTutorial && <TutorialModal sections={tutorialSections} onClose={closeTutorial}/>}
       {/* Mobile bottom nav */}
       <nav className="mob-nav" style={{position:'fixed',bottom:0,left:0,right:0,zIndex:200,background:'#000',borderTop:'1px solid rgba(255,255,255,0.1)',paddingBottom:'env(safe-area-inset-bottom,0)'}}>
         {TABS.map(t=>(
