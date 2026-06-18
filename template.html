@@ -5295,18 +5295,72 @@ const App = () => {
   const closeTutorial = () => { localStorage.setItem(TUTORIAL_KEY,'1'); setShowTutorial(false); };
 
   const tutorialSections = [
-    { id:'plan',   emoji:'📅', title:'Dienstplan',        items:['Zeigt den aktuellen Dienstplan für dein Team','Tippe auf einen Slot um Details zu sehen oder zu tauschen'] },
-    { id:'verfug', emoji:'✅', title:'Verfügbarkeit',     items:['Trage deine Verfügbarkeit ein damit der Plan optimiert werden kann','Sperrzeiten und Präferenzen pro Woche setzen'] },
+    { id:'plan', emoji:'📅', title:'Dienstplan lesen & nutzen', items:[
+      'Der Dienstplan zeigt die aktuelle Woche – mit den linken/rechten Pfeilen zur nächsten/letzten Woche wechseln',
+      'Jede Spalte ist ein Tag, jede Zeile eine Gruppe oder ein Dienst',
+      'Tippe auf einen deiner Slots um Details zu sehen: Uhrzeit, Ort, Mitverantwortliche',
+      'Tausch anfragen: Auf deinen Dienst tippen → „Tausch anfragen" → Person auswählen – diese bekommt eine Meldung',
+      'Farbcodes: Deine eigenen Dienste sind farblich hervorgehoben, andere Mitarbeiter grau',
+      'Gesamtansicht: Alle Bereiche gleichzeitig anzeigen mit dem Gesamt-Tab oben',
+    ]},
+    { id:'verfug', emoji:'✅', title:'Verfügbarkeit eintragen', items:[
+      'Unter „Verfügbarkeit" deine Verfügbarkeit für die kommenden Wochen eintragen',
+      'Pro Tag kannst du „Verfügbar", „Eingeschränkt" oder „Nicht verfügbar" angeben',
+      'Uhrzeit-Einschränkungen: z. B. „Nur ab 14 Uhr" für Tage wo du erst nachmittags da bist',
+      'Kommentar-Feld für Erklärungen: z. B. „Urlaub", „Außentermin", „Kinderkrankentag"',
+      'Deine Einträge sind sofort für den Planer sichtbar und werden bei der Planung berücksichtigt',
+      'Tipp: Verfügbarkeit immer mindestens 2 Wochen im Voraus aktuell halten',
+    ]},
     ...(canEdit ? [
-      { id:'pers',   emoji:'👤', title:'Personen',          items:['Mitarbeiterprofile, Qualifikationen und Kontaktdaten verwalten','Gruppenzugehörigkeiten und Dienstreihenfolgen festlegen'] },
-      { id:'grupp',  emoji:'👥', title:'Gruppen',           items:['Teams konfigurieren und Mitglieder zuweisen','Dienst-Reihenfolgen und Mindestbesetzung festlegen'] },
-      { id:'vorlag', emoji:'📋', title:'Vorlagen',          items:['Standardpläne für wiederkehrende Wochen anlegen','Spart Zeit beim Erstellen neuer Dienstpläne'] },
+      { id:'pers', emoji:'👤', title:'Personen verwalten', items:[
+        'Unter „Personen" alle Mitarbeiter-Profile anzeigen, bearbeiten und anlegen',
+        'Neues Profil: Name, Kontakt, Qualifikationen (z. B. „Ton", „Licht", „Moderation") und Gruppe zuweisen',
+        'Qualifikationen bestimmen für welche Dienste die Person eingeplant werden kann',
+        'Reihenfolge / Priorität: Gibt an wie oft jemand eingeplant werden soll relativ zu anderen',
+        'Profil deaktivieren wenn jemand ausscheidet – Planungshistorie bleibt erhalten',
+        'Tipp: Kontaktdaten aktuell halten für einfache Kommunikation bei Tausch-Anfragen',
+      ]},
+      { id:'grupp', emoji:'👥', title:'Gruppen & Teams', items:[
+        'Unter „Gruppen" die verschiedenen Dienst-Teams konfigurieren (z. B. „Worship", „Technik", „Kids")',
+        'Gruppe anlegen: Name, Farbe und Mindestbesetzung festlegen',
+        'Mitglieder zuweisen: Personen können in mehreren Gruppen sein',
+        'Dienst-Reihenfolge: Wer kommt bei der automatischen Planung zuerst dran?',
+        'Mindestbesetzung: Warnung wenn der Plan weniger Personen als nötig hat',
+        'Tipp: Gruppen repräsentieren Dienste nicht Personen – eine Person kann mehrere Dienste übernehmen',
+      ]},
+      { id:'vorlag', emoji:'📋', title:'Vorlagen & Wiederholungen', items:[
+        'Unter „Vorlagen" Standardpläne für wiederkehrende Wochen speichern',
+        'Vorlage erstellen: Einen geplanten Dienstplan als Vorlage speichern',
+        'Vorlage anwenden: Auf eine leere Woche anwenden – alle Dienste werden eingetragen',
+        'Vorlage bearbeiten: Für Sonder-Wochen (z. B. Ferienplan) eigene Vorlage erstellen',
+        'Spart viel Zeit bei regulären Wochen wo sich die Planung kaum ändert',
+        'Tipp: Eine „Normal-Woche" Vorlage und eine „Ferien-Woche" Vorlage anlegen',
+      ]},
     ] : []),
     ...(isAdmin ? [
-      { id:'einst',  emoji:'⚙️', title:'Einstellungen',    items:['App-Name, Bereiche und Standorte konfigurieren','Benutzerberechtigungen und Rollen verwalten'] },
-      { id:'ct',     emoji:'🔄', title:'ChurchTools',       items:['Personen und Gruppen aus ChurchTools synchronisieren','Einmalig CT-Token in Einstellungen hinterlegen'] },
+      { id:'einst', emoji:'⚙️', title:'Einstellungen & Konfiguration', items:[
+        'App-Name anpassen: Erscheint im Header und Browser-Tab',
+        'Bereiche / Standorte anlegen: Verschiedene Standorte unabhängig voneinander planen',
+        'Benutzer verwalten: Rollen vergeben (Mitarbeiter, Bearbeiter, Admin)',
+        'Rollen-Erklärung: Mitarbeiter = nur eigene Verfügbarkeit; Bearbeiter = planen; Admin = alles',
+        'Bereichszugriffe: Festlegen welcher Benutzer welchen Standort sehen darf',
+        'Tipp: Erst alle Gruppen und Personen anlegen, dann Benutzer zuweisen',
+      ]},
+      { id:'ct', emoji:'🔄', title:'ChurchTools-Synchronisation', items:[
+        'Unter „ChurchTools" Personen und Gruppen aus ChurchTools automatisch importieren',
+        'Einmalige Einrichtung: CT-Instanz-URL und API-Token in den Einstellungen hinterlegen',
+        'Token generieren: In ChurchTools unter Profil → API-Tokens → neuen Token erstellen',
+        'Sync starten: Auf „Synchronisieren" klicken – Personen und Gruppen werden importiert',
+        'Manuelle Änderungen in K21 MA bleiben erhalten – CT-Sync fügt nur neue Daten hinzu',
+        'Tipp: Nach größeren CT-Änderungen (viele neue Mitglieder) einen erneuten Sync durchführen',
+      ]},
     ] : []),
-    { id:'pin', emoji:'🔑', title:'PIN ändern', items:['Klicke auf das Schlüssel-Symbol neben dem Abmelden-Button'] },
+    { id:'pin', emoji:'🔑', title:'PIN ändern', items:[
+      'Klicke oben rechts auf das Schlüssel-Symbol (neben dem Abmelden-Button)',
+      'Gib zuerst deinen aktuellen PIN ein – zur Sicherheit',
+      'Neuen PIN eingeben (mind. 4 Zeichen) und ein zweites Mal bestätigen',
+      'Änderung gilt sofort auf allen Geräten',
+    ]},
   ];
   const canDel      = p.del;
   const canSettings = p.settings;
