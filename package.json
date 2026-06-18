@@ -1,7 +1,7 @@
 {
   "name": "revive-ma",
   "version": "1.0.0",
-  "description": "REVIVE Mitarbeiter – Dienstplan & Team-Verwaltung",
+  "description": "REVIVE Mitarbeiter \u2013 Dienstplan & Team-Verwaltung",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,6 +11,7 @@
     "@babel/standalone": "^7.25.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.0.0",
-    "express": "^4.18.0"
+    "express": "^4.18.0",
+    "nodemailer": "^6.9.0"
   }
 }
