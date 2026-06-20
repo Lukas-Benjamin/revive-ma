@@ -3269,7 +3269,18 @@ const GesamtDienstplanView = ({ profiles }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin, appSettings, saveAppSettings }) => {
+const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin, appSettings, saveAppSettings, currentUser, onUpdateUser, initialTab }) => {
+  const [tab, setTab] = useState(initialTab || 'allgemein');
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
+  const TABS = [
+    { id:'allgemein',  label:'Allgemein' },
+    { id:'profile',    label:'Profile' },
+    { id:'bereiche',   label:'Bereiche' },
+    { id:'mail',       label:'E-Mail' },
+    { id:'sicherheit', label:'Sicherheit' },
+  ];
+  const PILL = id => ({ background: tab===id ? '#0f172a' : 'rgba(255,255,255,0.08)', color: tab===id ? '#fff' : '#94a3b8', border:'none', cursor:'pointer' });
+  const [showMailSettings, setShowMailSettings] = useState(false);
   const { confirm: confirmDlg, confirmEl } = useConfirm();
   const [pin,    setPin]    = useState('');
   const [pin2,   setPin2]   = useState('');
@@ -3356,85 +3367,73 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
   };
 
   return (
-    <div className="space-y-5 up max-w-xl">
-      <div>
-        <h1 className="text-xl font-bold grad">Einstellungen</h1>
-        <p className="text-slate-500 text-sm mt-0.5">App-Konfiguration & Datenverwaltung</p>
-      </div>
-
-      {/* App-Name */}
-      <div className="glass rounded-2xl p-5 glow space-y-3">
-        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Allgemein</p>
-        <label className="text-slate-400 text-xs block">App-Name</label>
-        <div className="flex gap-2">
-          <input value={appNameInput} onChange={e=>setAppNameInput(e.target.value)} placeholder="z.B. Dienstplan" className={"flex-1 "+INP}/>
-          <button onClick={()=>{ if (saveAppSettings) saveAppSettings({...(appSettings||{}), appName:appNameInput.trim()||'Dienstplan'}); toast('Gespeichert ✓'); }}
-            className="px-4 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>Speichern</button>
-        </div>
-        <p className="text-xs text-slate-400">Wird oben im Header angezeigt. Standorte/Bereiche verwaltest du weiter unten.</p>
-      </div>
-
-      {/* PIN */}
-      <div className="glass rounded-2xl p-5 glow space-y-3">
-        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5"><SI p={IC.lock} size={11}/> Admin-PIN ändern</p>
-        <div className="relative">
-          <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPw?'none':'disc'}} value={pin} onChange={e=>setPin(e.target.value)}
-            placeholder="Neuer PIN" className={"w-full pr-10 "+INP}/>
-          <button type="button" onClick={() => setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700">
-            <SI p={showPw?IC.eyeOff:IC.eye} size={14}/>
-          </button>
-        </div>
-        <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPw?'none':'disc'}} value={pin2} onChange={e=>setPin2(e.target.value)}
-          placeholder="PIN bestätigen" className={"w-full "+INP}
-          onKeyDown={e=>e.key==='Enter'&&savePin()}/>
-        <button onClick={savePin} className="w-full py-2.5 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all" style={{borderRadius:30}}>PIN speichern</button>
-      </div>
-
-      {/* Backup */}
-      <div className="glass rounded-2xl p-5 glow space-y-3">
-        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Datensicherung</p>
-        <div className="flex gap-2">
-          <button onClick={exportJSON} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-black/5 hover:bg-black/5 text-slate-700 text-sm font-semibold transition-all border border-black/10">
-            <SI p={IC.download} size={13}/> Exportieren
-          </button>
-          <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-black/5 hover:bg-black/5 text-slate-700 text-sm font-semibold transition-all border border-black/10 cursor-pointer">
-            <SI p={IC.upload} size={13}/> Importieren
-            <input type="file" accept=".json" onChange={importJSON} className="hidden"/>
-          </label>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="glass rounded-2xl p-5">
-        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Datenübersicht</p>
-        {[['Personen',ma.personen.length],['Gruppen',ma.gruppen.length],['Vorlagen',ma.vorlagen.length],['Schichten',ma.schichten.length]].map(([k,v])=>(
-          <div key={k} className="flex items-center justify-between py-2" style={{borderBottom:'1px solid rgba(0,0,0,0.06)'}}>
-            <span className="text-slate-400 text-sm">{k}</span>
-            <span className="font-bold text-slate-900">{v}</span>
-          </div>
+    <div className="space-y-4 up max-w-xl">
+      {confirmEl}
+      <h1 className="text-xl font-bold grad">Einstellungen</h1>
+      <div className="flex gap-1.5 flex-wrap">
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} className="pill transition-all" style={PILL(t.id)}>{t.label}</button>
         ))}
       </div>
 
-      {/* Bereiche (admin only) */}
-      {isAdmin && profiles && setProfiles && (
-        <>
-          <div className="glass rounded-2xl p-5 glow space-y-3">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Bereiche verwalten</p>
-            <p className="text-slate-500 text-xs">Standorte/Bereiche hinzufügen, umbenennen oder entfernen. Der Tab "Gesamt" ist immer vorhanden.</p>
+      <div className="glass rounded-2xl p-5 glow">
+        {tab==='allgemein' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">App-Name</p>
+              <div className="flex gap-2">
+                <input value={appNameInput} onChange={e=>setAppNameInput(e.target.value)} placeholder="z.B. Dienstplan" className={"flex-1 "+INP}/>
+                <button onClick={()=>{ if (saveAppSettings) saveAppSettings({...(appSettings||{}), appName:appNameInput.trim()||'Dienstplan'}); toast('Gespeichert ✓'); }}
+                  className="px-4 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>Speichern</button>
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-3 space-y-1">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Features</p>
+              <Toggle label="ChurchTools-Integration" hint="Events und Personen aus ChurchTools synchronisieren" value={(appSettings||{}).ctEnabled!==false} onChange={v=>saveAppSettings&&saveAppSettings({...(appSettings||{}),ctEnabled:v})}/>
+              <Toggle label="Gesamt-Ansicht" hint="Übergreifende Dienstplan-Ansicht über alle Bereiche" value={(appSettings||{}).gesamtEnabled!==false} onChange={v=>saveAppSettings&&saveAppSettings({...(appSettings||{}),gesamtEnabled:v})}/>
+              <Toggle label="Gruppen-Zuweisung" hint="Personen können Gruppen zugewiesen werden" value={(appSettings||{}).gruppenEnabled!==false} onChange={v=>saveAppSettings&&saveAppSettings({...(appSettings||{}),gruppenEnabled:v})}/>
+              <Toggle label="Bestätigungs-Pflicht" hint="Dienste müssen von Personen aktiv bestätigt werden" value={(appSettings||{}).confirmRequired!==false} onChange={v=>saveAppSettings&&saveAppSettings({...(appSettings||{}),confirmRequired:v})}/>
+            </div>
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Datensicherung</p>
+              <div className="flex gap-2">
+                <button onClick={exportJSON} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 text-slate-300 text-sm font-semibold border border-white/10">
+                  <SI p={IC.download} size={13}/> Exportieren
+                </button>
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 text-slate-300 text-sm font-semibold border border-white/10 cursor-pointer">
+                  <SI p={IC.upload} size={13}/> Importieren
+                  <input type="file" accept=".json" onChange={importJSON} className="hidden"/>
+                </label>
+              </div>
+            </div>
+            <div className="border-t border-white/10 pt-3 space-y-1">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Datenübersicht</p>
+              {[['Personen',ma.personen.length],['Gruppen',ma.gruppen.length],['Vorlagen',ma.vorlagen.length],['Schichten',ma.schichten.length]].map(([k,v])=>(
+                <div key={k} className="flex items-center justify-between py-1.5" style={{borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+                  <span className="text-slate-400 text-sm">{k}</span><span className="font-bold text-slate-200">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab==='profile' && <ProfilesView currentUser={currentUser} onUpdateUser={onUpdateUser} ma={ma} currentProfile={profile}/>}
+
+        {tab==='bereiche' && isAdmin && (
+          <div className="space-y-3">
+            <p className="text-slate-400 text-xs">Standorte/Bereiche verwalten. Der Tab „Gesamt" ist immer vorhanden.</p>
             <div className="flex gap-2">
-              <input value={bName} onChange={e => setBName(e.target.value)} placeholder="Name des neuen Bereichs"
-                className={"flex-1 "+INP} onKeyDown={e => e.key === 'Enter' && addBereich()}/>
-              <button onClick={addBereich} className="bg-white hover:bg-gray-100 text-black px-4 py-2.5 text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>Hinzufügen</button>
+              <input value={bName} onChange={e=>setBName(e.target.value)} placeholder="Name des neuen Bereichs"
+                className={"flex-1 "+INP} onKeyDown={e=>e.key==='Enter'&&addBereich()}/>
+              <button onClick={addBereich} className="bg-white hover:bg-gray-100 text-black px-4 py-2.5 text-sm font-bold transition-all whitespace-nowrap" style={{borderRadius:30}}>+</button>
             </div>
             <ColorPicker value={bColor} onChange={setBColor}/>
-          </div>
-          <div className="glass rounded-2xl p-5 glow space-y-2">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Vorhandene Bereiche</p>
-            {profiles.map(pr => (
-              <div key={pr.id} className="p-3 rounded-xl bg-black/[0.03] border border-black/8">
-                {bEditId === pr.id ? (
-                  <div className="space-y-3">
-                    <div className="flex gap-2 items-center">
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              {profiles.map(pr=>(
+                <div key={pr.id} className="p-3 rounded-xl bg-black/[0.03] border border-black/8">
+                  {bEditId===pr.id ? (
+                    <div className="space-y-3">
+                      <div className="flex gap-2 items-center">
                       <input value={bEditName} onChange={e => setBEditName(e.target.value)}
                         className={"flex-1 "+INP_SM} autoFocus onKeyDown={e => e.key === 'Enter' && saveBereich(pr.id)}/>
                       <button onClick={() => saveBereich(pr.id)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-900/40 text-emerald-400 hover:bg-emerald-900/60 transition-all"><SI p={IC.check} size={13}/></button>
@@ -3458,15 +3457,43 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
               </div>
             ))}
           </div>
-        </>
-      )}
+          </div>
+        )}
 
-      {/* Danger Zone */}
-      <div className="glass rounded-2xl p-5" style={{borderColor:'rgba(239,68,68,0.2)'}}>
-        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3 text-red-500/70">Gefahrenzone</p>
-        <button onClick={resetAll} className="w-full py-2.5 rounded-xl text-red-400 text-sm font-semibold transition-all" style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)'}}>
-          Alle Daten zurücksetzen
-        </button>
+        {tab==='mail' && (
+          <div className="space-y-3">
+            {showMailSettings
+              ? <MailSettingsModal onClose={()=>setShowMailSettings(false)} onToast={msg=>toast(msg)}/>
+              : <button onClick={()=>setShowMailSettings(true)} className="w-full py-3 rounded-xl text-slate-300 text-sm font-semibold flex items-center justify-center gap-2" style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)'}}>
+                  <SI p={IC.mail} size={13}/> E-Mail konfigurieren
+                </button>
+            }
+          </div>
+        )}
+
+        {tab==='sicherheit' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5"><SI p={IC.lock} size={11}/> Admin-PIN ändern</p>
+              <div className="relative">
+                <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPw?'none':'disc'}} value={pin} onChange={e=>setPin(e.target.value)}
+                  placeholder="Neuer PIN" className={"w-full pr-10 "+INP}/>
+                <button type="button" onClick={()=>setShowPw(p=>!p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-400">
+                  <SI p={showPw?IC.eyeOff:IC.eye} size={14}/>
+                </button>
+              </div>
+              <input type="text" autoComplete="off" style={{WebkitTextSecurity:showPw?'none':'disc'}} value={pin2} onChange={e=>setPin2(e.target.value)}
+                placeholder="PIN bestätigen" className={"w-full "+INP} onKeyDown={e=>e.key==='Enter'&&savePin()}/>
+              <button onClick={savePin} className="w-full py-2.5 bg-white hover:bg-gray-100 text-black text-sm font-bold transition-all" style={{borderRadius:30}}>PIN speichern</button>
+            </div>
+            <div className="border-t border-white/10 pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2 text-red-400/70">Gefahrenzone</p>
+              <button onClick={resetAll} className="w-full py-2.5 rounded-xl text-red-400 text-sm font-semibold" style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)'}}>
+                Alle Daten zurücksetzen
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -5831,7 +5858,7 @@ const App = () => {
         {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='verfuegbarkeit'   && <ErrorBoundary><VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/></ErrorBoundary>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
-        {!isGesamt && page==='einstellungen' && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin} appSettings={appSettings} saveAppSettings={saveAppSettings}/>}
+        {!isGesamt && (page==='einstellungen'||page==='profiles') && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin} appSettings={appSettings} saveAppSettings={saveAppSettings} currentUser={currentUser} onUpdateUser={updateCurrentUser} initialTab={page==='profiles'?'profile':'allgemein'}/>}
         {!isGesamt && page==='churchtools'  && isAdmin      && <ErrorBoundary><CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/></ErrorBoundary>}
       </main>
       {headerEdit && (
