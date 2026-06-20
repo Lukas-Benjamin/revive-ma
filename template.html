@@ -5769,7 +5769,7 @@ const App = () => {
       { id:'statistik',    label:'Statistik',     icon:IC.chart    },
     ] : []),
     ...(canSettings ? [{ id:'einstellungen', label:'Einstellungen', icon:IC.cog }] : []),
-    ...(isAdmin ? [{ id:'churchtools', label:'ChurchTools', icon:IC.zap }] : []),
+    ...(isAdmin && appSettings?.ctEnabled!==false ? [{ id:'churchtools', label:'ChurchTools', icon:IC.zap }] : []),
   ];
 
   return (
