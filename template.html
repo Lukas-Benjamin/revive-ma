@@ -449,7 +449,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
     return () => unsub();
   }, []);
 
-  const findLogin = name => loginUsers.find(u => u.name.toLowerCase()===name.trim().toLowerCase());
+  const findLogin = name => loginUsers.find(u => (u.name||'').toLowerCase()===name.trim().toLowerCase());
 
   // Migrate old areas[] → areaAccess{}
   const migrateAA = u => {
@@ -3087,7 +3087,7 @@ const StatistikView = ({ ma, canEdit }) => {
                       {members.map(p=>(
                         <div key={p.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" style={{background:p.farbe+'18',color:p.farbe}}>
                           <Avatar name={p.name} farbe={p.farbe} size={14}/>
-                          {p.name.split(' ')[0]}
+                          {(p.name||'').split(' ')[0]}
                         </div>
                       ))}
                     </div>
@@ -3627,7 +3627,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
 
       {/* Firebase users */}
       {users.map(u => {
-        const inSchedule = ma?.personen?.some(p => p.name.toLowerCase()===u.name.toLowerCase());
+        const inSchedule = ma?.personen?.some(p => (p.name||'').toLowerCase()===(u.name||'').toLowerCase());
         const isAdminRole = u.role==='owner'||u.role==='admin';
         return (
         <div key={u.id} className="glass rounded-2xl p-4 flex items-center gap-3">
@@ -5835,7 +5835,7 @@ const App = () => {
           {/* Right: sync + role + logout */}
           <div className="flex items-center gap-2.5 flex-shrink-0 w-28 justify-end">
             <SyncDot state={syncState}/>
-            <span className="pill text-xs" style={{borderRadius:30, background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? currentUser.name.split(' ')[0] : 'Gast'}</span>
+            <span className="pill text-xs" style={{borderRadius:30, background:currentUser?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)', color:currentUser?'#ffffff':'rgba(148,163,184,1)'}}>{currentUser ? (currentUser.name||'').split(' ')[0]||'Admin' : 'Gast'}</span>
             <button onClick={()=>setShowMailSettings(true)} title="Mail-Einstellungen" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.send} size={13}/></button>
             <button onClick={()=>setShowPinChange(true)} title="PIN ändern" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.key} size={14}/></button>
             <button onClick={logout} title="Abmelden" className="transition-all opacity-50 hover:opacity-100" style={{color:'#ffffff'}}><SI p={IC.logout} size={14}/></button>
