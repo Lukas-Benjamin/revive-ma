@@ -449,7 +449,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
     return () => unsub();
   }, []);
 
-  const findLogin = name => loginUsers.find(u => (u.name||'').toLowerCase()===name.trim().toLowerCase());
+  const findLogin = name => name ? loginUsers.find(u => (u.name||'').toLowerCase()===(name||'').trim().toLowerCase()) : undefined;
 
   // Migrate old areas[] → areaAccess{}
   const migrateAA = u => {
@@ -552,7 +552,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
       {(() => {
         const q = search.trim().toLowerCase();
         const visPersonen = (allowedGroups ? ma.personen.filter(p=>(p.gruppenIds||(p.gruppeId?[p.gruppeId]:[])).some(g=>allowedGroups.includes(g))) : ma.personen)
-          .filter(p => !q || p.name.toLowerCase().includes(q));
+          .filter(p => !q || (p.name||'').toLowerCase().includes(q));
         return visPersonen.length === 0 ? (
           <div className="glass rounded-2xl py-16 text-center">
             <div className="text-slate-400 font-medium mb-1">Noch keine Personen</div>
@@ -2926,7 +2926,7 @@ const StatistikView = ({ ma, canEdit }) => {
           byDienst[d?.name||'?'] = (byDienst[d?.name||'?']||0)+1;
         }));
         return { p, total, byDienst, lastDate };
-      }).sort((a,b) => sortMode==='alpha' ? a.p.name.localeCompare(b.p.name) : sortMode==='asc' ? a.total-b.total : b.total-a.total);
+      }).sort((a,b) => sortMode==='alpha' ? (a.p.name||'').localeCompare(b.p.name||'') : sortMode==='asc' ? a.total-b.total : b.total-a.total);
   }, [ma, filtSchichten, filterGrp, sortMode]);
 
   const teamStats = useMemo(() => {
