@@ -3840,7 +3840,7 @@ const LoginScreen = ({ onLogin }) => {
         if (!cancelled) {
           if (namesRes.ok) {
             const data = await namesRes.json();
-            setNames(data.map(u => u.name));
+            setNames(data.map(u => u.name).filter(Boolean));
           }
           if (adminRes.ok) {
             const ad = await adminRes.json();
