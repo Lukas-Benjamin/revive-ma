@@ -260,6 +260,15 @@ const exportIcal = (ma, single) => {
 };
 
 // ─── Data Model ───────────────────────────────────────────────────────────────
+// Kann diese Person diesen Slot belegen? Gruppen-Zugehörigkeit + Dienst-Qualifikation.
+// (gleiche Logik wie die Auto-Einteilung nutzt)
+const canStaffSlot = (person, sl) => {
+  if (!person || !sl) return false;
+  const grpIds = person.gruppenIds || (person.gruppeId ? [person.gruppeId] : []);
+  if (!grpIds.includes(sl.gruppeId)) return false;
+  if ((person.dienste||[]).length > 0 && !(person.dienste||[]).includes(sl.dienstId)) return false;
+  return true;
+};
 const DEFAULT_MA     = () => ({ gruppen:[], vorlagen:[], schichten:[], plaene:[], tauschAnfragen:[], abwesenheiten:[], ctSettings:{calendarMappings:[],importedEventIds:[],ctPersonIds:{}} });
 const DEFAULT_SHARED = () => ({ personen:[], konflikte:[], praeferenzen:[] });
 const MA_COLORS = ['#6366f1','#8b5cf6','#a855f7','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#14b8a6','#06b6d4','#3b82f6','#84cc16'];
@@ -1548,9 +1557,15 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   // ── Offene Abfragen für eingeloggten User ──
   const [abfrageModal, setAbfrageModal] = useState(null); // schicht
   const [abfrageResp,  setAbfrageResp]  = useState({});   // {slotId: art}
+  // Massen-Abfrage (mehrere Schichten unter einem Link)
+  const [bulkSel,   setBulkSel]   = useState(() => new Set()); // ausgewählte schichtIds
+  const [bulkToken, setBulkToken] = useState('');
   const openAbfragen = useMemo(() => {
     if (!myPerson) return [];
-    return ma.schichten.filter(s=>s.abfrageToken && !(s.wuensche||[]).some(w=>w.personId===myPerson.id));
+    // Nur Abfragen zeigen, bei denen die Person mindestens einen Slot belegen kann
+    return ma.schichten.filter(s=>s.abfrageToken
+      && !(s.wuensche||[]).some(w=>w.personId===myPerson.id)
+      && (s.slots||[]).some(sl=>canStaffSlot(myPerson, sl)));
   }, [ma.schichten, myPerson]);
 
   const submitAbfrageResp = () => {
@@ -1574,6 +1589,39 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     });
     setAbfrageModal(null); setAbfrageResp({});
     toast('Antwort gespeichert ✓');
+  };
+
+  // ── Massen-Abfrage: einen Link für viele Schichten ──
+  const openBulkAbfrage = () => {
+    // Aktive Massen-Abfrage erkennen (Token, das auf ≥2 Schichten liegt)
+    const tokenCounts = {};
+    ma.schichten.forEach(s=>{ if(s.abfrageToken) tokenCounts[s.abfrageToken]=(tokenCounts[s.abfrageToken]||0)+1; });
+    const activeTok = Object.keys(tokenCounts).find(t=>tokenCounts[t]>1) || '';
+    if (activeTok) {
+      setBulkToken(activeTok);
+      setBulkSel(new Set(ma.schichten.filter(s=>s.abfrageToken===activeTok).map(s=>s.id)));
+    } else {
+      setBulkToken('');
+      // Standard: alle künftigen Schichten vorauswählen (ältere abwählbar)
+      const heute = today();
+      const future = ma.schichten.filter(s=>s.datum>=heute);
+      setBulkSel(new Set((future.length?future:ma.schichten).map(s=>s.id)));
+    }
+    setModal('bulk_abfrage');
+  };
+  const toggleBulkSel = id => setBulkSel(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
+  const createBulkAbfrage = () => {
+    if (!onChange || bulkSel.size===0) return;
+    const t = genId().slice(0,8);
+    onChange(m=>({...m, schichten:m.schichten.map(s=>bulkSel.has(s.id)?{...s,abfrageToken:t}:s)}));
+    setBulkToken(t);
+    toast(`Abfrage für ${bulkSel.size} Schicht${bulkSel.size!==1?'en':''} erstellt 📋`);
+  };
+  const deactivateBulkAbfrage = () => {
+    if (!onChange || !bulkToken) return;
+    onChange(m=>({...m, schichten:m.schichten.map(s=>s.abfrageToken===bulkToken?{...s,abfrageToken:''}:s)}));
+    setBulkToken(''); setModal(null);
+    toast('Abfrage deaktiviert');
   };
 
   const createPlan = () => {
@@ -2009,6 +2057,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
             className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
             <SI p={IC.send} size={13}/> Teilen
           </button>}
+          {onChange && !allowedGroups && ma.schichten.length>0 && <button onClick={openBulkAbfrage}
+            className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30, background:'rgba(99,102,241,0.15)', color:'#6366f1'}}>
+            📋 Abfrage
+          </button>}
           {onChange && !allowedGroups && ma.schichten.some(s=>!s.veroeffentlicht) && (
             <button onClick={publishAll}
               className="flex items-center gap-1.5 bg-white hover:bg-gray-100 text-black text-xs font-bold px-3.5 py-2 transition-all" style={{borderRadius:30}}>
@@ -2219,9 +2271,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       {abfrageModal && (
         <Modal title={`Abfrage: ${abfrageModal.titel||fmtDe(abfrageModal.datum)}`} onClose={()=>{setAbfrageModal(null);setAbfrageResp({});}}>
           <div className="space-y-4">
-            <p className="text-slate-500 text-xs">{fmtDe(abfrageModal.datum)} — Bitte für jeden Slot angeben, ob du kannst.</p>
+            <p className="text-slate-500 text-xs">{fmtDe(abfrageModal.datum)} — Bitte für jeden Dienst angeben, ob du kannst.</p>
             <div className="space-y-2">
-              {(abfrageModal.slots||[]).map(sl => {
+              {(abfrageModal.slots||[]).filter(sl=>canStaffSlot(myPerson, sl)).map(sl => {
                 const grp = ma.gruppen.find(g=>g.id===sl.gruppeId);
                 const val = abfrageResp[sl.id]||'neutral';
                 return (
@@ -2360,6 +2412,57 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               </button>
               <button onClick={() => { setModal(null); setRecur({enabled:false,type:'weekly',until:''}); }} className="px-4 py-2.5 bg-black/5 text-slate-400 text-sm" style={{borderRadius:30}}>Abbrechen</button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {modal==='bulk_abfrage' && (
+        <Modal title="Verfügbarkeits-Abfrage" onClose={()=>setModal(null)}>
+          <div className="space-y-4">
+            {!bulkToken ? (<>
+              <p className="text-slate-500 text-xs">Wähle die Schichten aus, für die dein Team seine Verfügbarkeit eintragen soll. Es entsteht <b>ein</b> gemeinsamer Link.</p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">{bulkSel.size} ausgewählt</span>
+                <div className="flex gap-2">
+                  <button onClick={()=>setBulkSel(new Set([...ma.schichten].map(s=>s.id)))} className="text-xs font-semibold text-indigo-600">Alle</button>
+                  <button onClick={()=>setBulkSel(new Set())} className="text-xs font-semibold text-slate-400">Keine</button>
+                </div>
+              </div>
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {[...ma.schichten].sort((a,b)=>b.datum.localeCompare(a.datum)).map(s=>{
+                  const sel = bulkSel.has(s.id);
+                  return (
+                    <button key={s.id} onClick={()=>toggleBulkSel(s.id)}
+                      className="w-full flex items-center gap-2.5 p-2.5 rounded-xl text-left transition-all border"
+                      style={sel?{background:'rgba(99,102,241,0.08)',borderColor:'rgba(99,102,241,0.35)'}:{background:'rgba(0,0,0,0.03)',borderColor:'transparent'}}>
+                      <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 text-white text-[10px]"
+                        style={{background:sel?'#6366f1':'rgba(0,0,0,0.12)'}}>{sel?'✓':''}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-800 truncate">{s.titel||fmtDe(s.datum)}</div>
+                        <div className="text-xs text-slate-500">{fmtDe(s.datum)} · {s.slots.length} Slots</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={createBulkAbfrage} disabled={bulkSel.size===0}
+                className="w-full bg-black hover:bg-slate-900 disabled:opacity-40 text-white font-bold py-3 text-sm transition-all" style={{borderRadius:30}}>
+                Abfrage-Link erstellen
+              </button>
+            </>) : (<>
+              <p className="text-slate-500 text-xs">Teile diesen Link mit deinem Team. Jede:r sieht nur die Dienste, die er/sie belegen kann, und trägt für {bulkSel.size} Schicht{bulkSel.size!==1?'en':''} die Verfügbarkeit ein — ohne Login.</p>
+              <div className="bg-black/5 rounded-xl p-3 text-xs font-mono text-slate-700 break-all select-all">
+                {window.location.origin + window.location.pathname + '?abfrage=' + bulkToken}
+              </div>
+              <button onClick={()=>navigator.clipboard?.writeText(window.location.origin+window.location.pathname+'?abfrage='+bulkToken).then(()=>toast('Link kopiert 📋'))}
+                className="w-full bg-white hover:bg-gray-100 text-black font-bold py-2.5 text-sm transition-all" style={{borderRadius:30}}>
+                Link kopieren
+              </button>
+              <button onClick={deactivateBulkAbfrage}
+                className="w-full text-red-400 text-xs py-1 hover:text-red-500 transition-all">
+                Abfrage deaktivieren
+              </button>
+            </>)}
           </div>
         </Modal>
       )}
@@ -3997,7 +4100,7 @@ const LoginScreen = ({ onLogin }) => {
 // ABFRAGE FORM  (public — no login required)
 // ═══════════════════════════════════════════════════════════════════════════════
 const AbfrageForm = ({ token }) => {
-  const [schicht, setSchicht] = useState(null);
+  const [schichten, setSchichten] = useState(null); // alle Schichten unter diesem Token
   const [maData,  setMaData]  = useState(null);
   const [pid,     setPid]     = useState('');
   const [form,    setForm]    = useState({});
@@ -4022,8 +4125,9 @@ const AbfrageForm = ({ token }) => {
         try {
           const snap = await adb.collection(pr.id).doc('ma').get();
           const d = snap.data()?.data;   // ma-Nutzdaten liegen unter .data
-          const s = (d?.schichten||[]).find(s=>s.abfrageToken===token);
-          if (s) { setSchicht(s); setMaData({ ...d, personen }); setPid(''); return; }
+          const list = (d?.schichten||[]).filter(s=>s.abfrageToken===token)
+                                          .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+          if (list.length) { setSchichten(list); setMaData({ ...d, personen }); setPid(''); return; }
         } catch(e) { console.warn('AbfrageForm: profile read error:', pr.id, e.message); }
       }
       setErr('Abfrage nicht gefunden oder bereits abgelaufen.');
@@ -4056,7 +4160,7 @@ const AbfrageForm = ({ token }) => {
       </div>
     </div>
   );
-  if (!schicht) return <div className="min-h-screen flex items-center justify-center"><div className="text-slate-500 text-sm">Wird geladen…</div></div>;
+  if (!schichten) return <div className="min-h-screen flex items-center justify-center"><div className="text-slate-500 text-sm">Wird geladen…</div></div>;
   if (done) return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
       <div className="glass rounded-2xl p-8 max-w-sm w-full text-center glow space-y-3">
@@ -4071,6 +4175,12 @@ const AbfrageForm = ({ token }) => {
 
   const gruppen = maData?.gruppen||[];
   const personen = maData?.personen||[];
+  const person = personen.find(p=>p.id===pid) || null;
+  // Pro Schicht nur die Slots, die diese Person belegen kann
+  const staffable = person
+    ? schichten.map(s=>({ schicht:s, slots:(s.slots||[]).filter(sl=>canStaffSlot(person, sl)) })).filter(x=>x.slots.length>0)
+    : [];
+  const totalSlots = staffable.reduce((n,x)=>n+x.slots.length, 0);
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="max-w-md mx-auto space-y-4 up">
@@ -4079,20 +4189,28 @@ const AbfrageForm = ({ token }) => {
             <img src="/logo.png" style={{width:24,height:24,objectFit:'contain',mixBlendMode:'multiply'}} alt="K21"/>
             <span style={{fontFamily:'Gotham,sans-serif',fontWeight:900,fontSize:11,color:'#000000',letterSpacing:'-0.03em'}}>DIENSTPLAN ABFRAGE</span>
           </div>
-          <h1 className="text-lg font-black text-slate-900">{schicht.titel||fmtDe(schicht.datum)}</h1>
-          <p className="text-slate-500 text-sm">{fmtDe(schicht.datum)} · {schicht.slots.length} Slots</p>
+          <h1 className="text-lg font-black text-slate-900">{schichten.length>1 ? 'Verfügbarkeits-Abfrage' : (schichten[0].titel||fmtDe(schichten[0].datum))}</h1>
+          <p className="text-slate-500 text-sm">{schichten.length>1 ? `${schichten.length} Schichten` : fmtDe(schichten[0].datum)}</p>
         </div>
         <div className="glass rounded-2xl p-4 glow space-y-3">
           <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">Dein Name</label>
-          <select value={pid} onChange={e=>setPid(e.target.value)} className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-800">
+          <select value={pid} onChange={e=>{setPid(e.target.value);setForm({});}} className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-800">
             <option value="">— auswählen —</option>
             {personen.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        {pid && schicht.slots.length>0 && (
-          <div className="glass rounded-2xl p-4 glow space-y-4">
-            <label className="text-slate-400 text-xs font-semibold uppercase tracking-wider block">Deine Verfügbarkeit</label>
-            {schicht.slots.map(sl=>{
+        {pid && totalSlots===0 && (
+          <div className="glass rounded-2xl p-5 glow text-center">
+            <p className="text-slate-500 text-sm">Für dich sind in dieser Abfrage keine passenden Dienste hinterlegt.</p>
+          </div>
+        )}
+        {pid && staffable.map(({schicht:s, slots})=>(
+          <div key={s.id} className="glass rounded-2xl p-4 glow space-y-4">
+            <div>
+              <div className="text-sm font-black text-slate-900">{s.titel||fmtDe(s.datum)}</div>
+              <div className="text-slate-400 text-xs">{fmtDe(s.datum)}</div>
+            </div>
+            {slots.map(sl=>{
               const g=gruppen.find(x=>x.id===sl.gruppeId);
               const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);
               const val=form[sl.id]||'neutral';
@@ -4116,8 +4234,8 @@ const AbfrageForm = ({ token }) => {
               );
             })}
           </div>
-        )}
-        {pid && (
+        ))}
+        {pid && totalSlots>0 && (
           <button onClick={submit} className="w-full bg-black hover:bg-slate-900 text-white font-bold py-3.5 text-sm transition-all" style={{borderRadius:30}}>
             Absenden
           </button>

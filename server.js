@@ -15,9 +15,19 @@ app.use(express.json());
 // ─── Security headers ────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net https://www.gstatic.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' data: https://fonts.gstatic.com; " +
+    "img-src 'self' data: blob: https:; " +
+    "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://k21.church.tools; " +
+    "frame-ancestors 'none';"
+  );
   next();
 });
 
@@ -181,6 +191,12 @@ async function fsDelete(col, docId) {
 // ─── MA data proxy (bypasses Firestore security rules) ──────────────────────
 // GET  /api/ma?profile=revive   → read {profile}/ma doc (returns {data:{...}})
 
+// Allowlists to prevent collection injection via query params
+const VALID_PROFILE = /^[a-z0-9_-]{1,64}$/i;
+const VALID_COL = /^k21-users(-[a-z0-9-]{1,32})?$/;
+function validProfile(p) { return p && VALID_PROFILE.test(p) ? p : null; }
+function validCol(c, fallback) { return c && VALID_COL.test(c) ? c : fallback; }
+
 // ─── PIN-Sperre ────────────────────────────────────────────────────────────────
 const LOCK_COL = 'login-locks';
 const MAX_ATTEMPTS = 5;
@@ -222,9 +238,9 @@ async function resetLock(name) {
   } catch {}
 }
 
-app.get('/api/ma', async (req, res) => {
-  const profile = req.query.profile;
-  if (!profile) return res.status(400).json({error:'missing profile'});
+app.get('/api/ma', authMiddleware, async (req, res) => {
+  const profile = validProfile(req.query.profile);
+  if (!profile) return res.status(400).json({error:'missing or invalid profile'});
   const doc = await fsGetDoc(profile, 'ma');
   // null = doc not yet created (new profile) → return empty; only 503 if truly unreachable
   if (doc === null) {
@@ -237,8 +253,8 @@ app.get('/api/ma', async (req, res) => {
 
 // POST /api/ma?profile=revive   → write {profile}/ma doc (body = {data:{...}})
 app.post('/api/ma', authMiddleware, async (req, res) => {
-  const profile = req.query.profile;
-  if (!profile) return res.status(400).json({error:'missing profile'});
+  const profile = validProfile(req.query.profile);
+  if (!profile) return res.status(400).json({error:'missing or invalid profile'});
   await fsSet(profile, 'ma', req.body);
   res.json({ok:true});
 });
@@ -254,39 +270,48 @@ app.post('/api/abfrage', rateLimit(60_000, 30), async (req, res) => {
 
   const cfg = await fsGetDoc('config', 'profiles');
   const profiles = (cfg?.data && cfg.data.length) ? cfg.data : ABFRAGE_FALLBACK_PROFILES;
+  const newAbwId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  let matched = false;
 
-  const wishes = Object.entries(form)
-    .filter(([, v]) => v && v !== 'neutral')
-    .map(([slotId, art]) => ({ personId, slotId, art }));
-  const entries = Object.values(form).filter(v => v && v !== 'neutral');
-  const hasYes = entries.includes('wunschdienst');
-  const hasNo  = entries.includes('wunschfrei');
-
+  // Ein Token kann auf mehreren Schichten liegen (Massen-Abfrage).
   for (const pr of profiles) {
     const doc = await fsGetDoc(pr.id, 'ma');
     const d = doc?.data;
-    const schicht = (d?.schichten || []).find(s => s.abfrageToken === token);
-    if (!schicht) continue;
+    if (!d) continue;
+    const affected = (d.schichten || []).filter(s => s.abfrageToken === token);
+    if (!affected.length) continue;
+    matched = true;
 
-    const newSchichten = d.schichten.map(s =>
-      s.abfrageToken !== token ? s
-        : { ...s, wuensche: [...(s.wuensche || []).filter(w => w.personId !== personId), ...wishes] });
-    const next = { ...d, schichten: newSchichten };
+    // Wünsche je Schicht eintragen (nur Slots, die zu dieser Schicht gehören)
+    const newSchichten = (d.schichten || []).map(s => {
+      if (s.abfrageToken !== token) return s;
+      const slotIds = new Set((s.slots || []).map(sl => sl.id));
+      const wishes = Object.entries(form)
+        .filter(([slotId, v]) => v && v !== 'neutral' && slotIds.has(slotId))
+        .map(([slotId, art]) => ({ personId, slotId, art }));
+      return { ...s, wuensche: [...(s.wuensche || []).filter(w => w.personId !== personId), ...wishes] };
+    });
 
-    if (hasNo && !hasYes && schicht.datum) {
-      const keep = (d.abwesenheiten || []).filter(a => !(a.personId === personId && a.from === schicht.datum && (a.reason || '').startsWith('Abfrage')));
-      next.abwesenheiten = [...keep, {
-        id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-        personId, from: schicht.datum, to: schicht.datum,
-        reason: 'Abfrage: ' + (schicht.titel || schicht.datum),
-      }];
-    } else if (hasYes) {
-      next.abwesenheiten = (d.abwesenheiten || []).filter(a => !(a.personId === personId && a.from === schicht.datum && (a.reason || '').startsWith('Abfrage')));
+    // Abwesenheiten je betroffener Schicht neu berechnen
+    let abw = (d.abwesenheiten || []);
+    for (const s of affected) {
+      if (!s.datum) continue;
+      const slotIds = new Set((s.slots || []).map(sl => sl.id));
+      const vals = Object.entries(form)
+        .filter(([slotId, v]) => v && v !== 'neutral' && slotIds.has(slotId))
+        .map(([, v]) => v);
+      const sYes = vals.includes('wunschdienst');
+      const sNo  = vals.includes('wunschfrei');
+      abw = abw.filter(a => !(a.personId === personId && a.from === s.datum && (a.reason || '').startsWith('Abfrage')));
+      if (sNo && !sYes) {
+        abw = [...abw, { id: newAbwId(), personId, from: s.datum, to: s.datum, reason: 'Abfrage: ' + (s.titel || s.datum) }];
+      }
     }
 
-    await fsSet(pr.id, 'ma', { data: next });
-    return res.json({ ok: true });
+    await fsSet(pr.id, 'ma', { data: { ...d, schichten: newSchichten, abwesenheiten: abw } });
   }
+
+  if (matched) return res.json({ ok: true });
   res.status(404).json({ error: 'Abfrage nicht gefunden' });
 });
 
@@ -327,7 +352,7 @@ app.get('/api/ct/*', authMiddleware, rateLimit(60_000, 60), async (req, res) => 
 
 // Returns only names (no PINs) — safe for autocomplete
 app.get('/api/user-names', async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   const users = await fsGetCollection(col);
   if (users === null) return res.status(503).json({ error: 'Firestore nicht erreichbar' });
   // include id + name only, strip any PIN fields
@@ -338,7 +363,7 @@ app.get('/api/user-names', async (req, res) => {
 app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
   const { name, pin, collection } = req.body || {};
   if (!name || !pin) return res.status(400).json({ error: 'Name und PIN erforderlich' });
-  const col = collection || 'k21-users';
+  const col = validCol(collection, 'k21-users');
 
   const lockMins = await checkLock(name);
   if (lockMins) return res.status(429).json({ error: `Zu viele Fehlversuche – bitte ${lockMins} Min. warten` });
@@ -404,14 +429,14 @@ app.post('/api/logout', (req, res) => res.json({ ok: true }));
 
 // Admin-only: list users (names only, no hashes)
 app.get('/api/users', authMiddleware, async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   const users = await fsGetCollection(col);
   if (users === null) return res.status(503).json({ error: 'Firestore nicht erreichbar' });
   res.json(users.map(({ pin: _p, pinHash: _h, ...rest }) => rest));
 });
 
 app.post('/api/users', authMiddleware, async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   const { pin, ...rest } = req.body;
   const data = { ...rest, createdAt: new Date().toISOString() };
   if (pin) data.pinHash = await bcrypt.hash(String(pin), SALT_ROUNDS);
@@ -420,7 +445,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
 });
 
 app.put('/api/users/:id', authMiddleware, async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   const { pin, ...rest } = req.body;
   const data = { ...rest };
   if (pin) data.pinHash = await bcrypt.hash(String(pin), SALT_ROUNDS);
@@ -429,14 +454,14 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
 });
 
 app.delete('/api/users/:id', authMiddleware, async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   await fsDelete(col, req.params.id);
   res.json({ ok: true });
 });
 
 // Patch single field — uses Firestore updateMask so other fields are preserved
 app.post('/api/users/:id/consent', authMiddleware, async (req, res) => {
-  const col = req.query.c || 'k21-users';
+  const col = validCol(req.query.c, 'k21-users');
   await fsSet(col, req.params.id, { dsgvoConsent: true }, ['dsgvoConsent']);
   res.json({ ok: true });
 });
@@ -543,12 +568,12 @@ app.post('/api/invite', authMiddleware, async (req, res) => {
   if (!(req.user.role === 'admin' || req.user.id === 'admin')) return res.status(403).json({ error: 'Nur Admin' });
   let nodemailer; try { nodemailer = require('nodemailer'); } catch { return res.status(500).json({ error: 'nodemailer nicht installiert – npm install nodemailer' }); }
   const { userId, userName, userEmail } = req.body || {};
-  if (!userEmail) return res.status(400).json({ error: 'E-Mail fehlt' });
+  if (!userEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) return res.status(400).json({ error: 'Ungültige E-Mail-Adresse' });
   const mailCfg = await fsGetDoc('config', 'mail') || {};
   if (!mailCfg.smtpHost) return res.status(400).json({ error: 'SMTP nicht konfiguriert – zuerst Mail-Einstellungen setzen' });
   const token = crypto.randomBytes(32).toString('hex');
   await fsSet('invites', token, { userId, userName, userEmail, expires: Date.now() + 7*24*3600_000, used: false });
-  const appUrl = req.headers['x-forwarded-proto'] ? `${req.headers['x-forwarded-proto']}://${req.get('host')}` : `http://${req.get('host')}`;
+  const appUrl = process.env.APP_URL || (req.headers['x-forwarded-proto'] ? `${req.headers['x-forwarded-proto']}://${req.get('host')}` : `http://${req.get('host')}`);
   const inviteUrl = `${appUrl}/?invite=${token}`;
   const appName = (await fsGetDoc('config', 'settings'))?.appName || 'K21 App';
   try {
@@ -591,6 +616,12 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
-app.use(express.static(__dirname));
+app.get('*', (req, res) => {
+  if (!compiledHtml) { res.status(503).send('Wird gestartet…'); return; }
+  let html = compiledHtml.replace('"__FIREBASE_CONFIG__"', firebaseConfig);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(html);
+});
 app.listen(PORT, () => console.log(`REVIVE Mitarbeiter läuft auf http://localhost:${PORT}`));
 
