@@ -170,7 +170,8 @@ const IC = {
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-const genId   = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+// genId removed — use crypto.randomUUID() directly
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const today   = () => new Date().toISOString().split('T')[0];
 const fmtDe   = d => { if (!d) return ''; const [y,m,dd] = d.split('-'); return `${dd}.${m}.${y}`; };
 const loadJSON = (key, fb) => { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fb; } catch { return fb; } };
@@ -375,7 +376,7 @@ const useUndo = (toast) => {
   const [undoState, setUndoState] = useState(null); // {msg, onUndo, id}
   const showUndo = (msg, onUndo) => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    const id = genId();
+    const id = crypto.randomUUID();
     setUndoState({msg, onUndo, id});
     timerRef.current = setTimeout(() => setUndoState(s => s?.id===id ? null : s), 5000);
   };
@@ -487,7 +488,7 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
 
     // 1. Save / update person in ma data
     if (modal === 'add') {
-      onChange(m => ({ ...m, personen: [...m.personen, { id:genId(), name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[], notiz:form.notiz.trim() }] }));
+      onChange(m => ({ ...m, personen: [...m.personen, { id:crypto.randomUUID(), name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[], notiz:form.notiz.trim() }] }));
     } else {
       onChange(m => ({ ...m, personen: m.personen.map(p =>
         p.id===modal.id ? { ...p, name, farbe:form.farbe, gruppenIds:form.gruppenIds||[], dienste:form.dienste||[], notiz:form.notiz.trim() } : p
@@ -819,21 +820,21 @@ const VerfuegbarkeitView = ({ ma, onChange, onChangeMa, toast }) => {
 
   const saveKonflikte = () => {
     if (!konForm.p1 || !konForm.p2) return;
-    onChange(m=>({...m, konflikte:[...(m.konflikte||[]), {id:genId(), p1:konForm.p1, p2:konForm.p2, note:konForm.note.trim()}]}));
+    onChange(m=>({...m, konflikte:[...(m.konflikte||[]), {id:crypto.randomUUID(), p1:konForm.p1, p2:konForm.p2, note:konForm.note.trim()}]}));
     toast('Ausnahme gespeichert');
     setKonModal(false);
   };
 
   const savePref = () => {
     if (!prefForm.personId || !prefForm.dienstId) return;
-    onChange(m=>({...m, praeferenzen:[...(m.praeferenzen||[]), {id:genId(), personId:prefForm.personId, dienstId:prefForm.dienstId, prio:prefForm.prio, note:(prefForm.note||'').trim()}]}));
+    onChange(m=>({...m, praeferenzen:[...(m.praeferenzen||[]), {id:crypto.randomUUID(), personId:prefForm.personId, dienstId:prefForm.dienstId, prio:prefForm.prio, note:(prefForm.note||'').trim()}]}));
     toast('Präferenz gespeichert');
     setPrefModal(false);
   };
 
   const saveAbsenz = () => {
     if (!absForm.personId || !absForm.from) return;
-    const entry = { id:genId(), personId:absForm.personId, from:absForm.from, to:absForm.to||absForm.from, reason:absForm.reason.trim() };
+    const entry = { id:crypto.randomUUID(), personId:absForm.personId, from:absForm.from, to:absForm.to||absForm.from, reason:absForm.reason.trim() };
     const updater = onChangeMa || onChange;
     if (updater) updater(m=>({...m, abwesenheiten:[...(m.abwesenheiten||[]), entry]}));
     toast('Abwesenheit gespeichert');
@@ -1089,7 +1090,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
   const saveGruppe = () => {
     if (!form.name.trim()) return;
     if (modal==='add') {
-      onChange(m => ({ ...m, gruppen: [...m.gruppen, { id:genId(), name:form.name.trim(), farbe:form.farbe, dienste:[] }] }));
+      onChange(m => ({ ...m, gruppen: [...m.gruppen, { id:crypto.randomUUID(), name:form.name.trim(), farbe:form.farbe, dienste:[] }] }));
       toast('Gruppe erstellt');
     } else {
       onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===modal.id ? { ...g, name:form.name.trim(), farbe:form.farbe } : g) }));
@@ -1115,7 +1116,7 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
   const addDienst = gid => {
     const name = (newDienst[gid]||'').trim();
     if (!name) return;
-    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:[...(g.dienste||[]), { id:genId(), name, count:1 }] } : g) }));
+    onChange(m => ({ ...m, gruppen: m.gruppen.map(g => g.id===gid ? { ...g, dienste:[...(g.dienste||[]), { id:crypto.randomUUID(), name, count:1 }] } : g) }));
     setNewDienst(p=>({...p,[gid]:''}));
     toast('Dienst hinzugefügt');
   };
@@ -1227,25 +1228,25 @@ const GruppenView = ({ ma, onChange, onChangeShared, toast, allowedGroups }) => 
 // ═══════════════════════════════════════════════════════════════════════════════
 const VorlagenView = ({ ma, onChange, toast }) => {
   const [modal,  setModal]  = useState(null);
-  const [form,   setForm]   = useState({ name:'', art:'einzel', slots:[], tage:[{id:genId(),label:'Tag 1',slots:[]}] });
+  const [form,   setForm]   = useState({ name:'', art:'einzel', slots:[], tage:[{id:crypto.randomUUID(),label:'Tag 1',slots:[]}] });
   const [selTag, setSelTag] = useState(0);
 
-  const emptyForm = () => ({ name:'', art:'einzel', slots:[], tage:[{id:genId(),label:'Tag 1',slots:[]}] });
+  const emptyForm = () => ({ name:'', art:'einzel', slots:[], tage:[{id:crypto.randomUUID(),label:'Tag 1',slots:[]}] });
   const openAdd  = () => { setForm(emptyForm()); setSelTag(0); setModal('add'); };
   const openEdit = v => {
     setForm({ name:v.name, art:v.art||'einzel', slots:(v.slots||[]).map(s=>({...s})),
-      tage:(v.tage||[{id:genId(),label:'Tag 1',slots:[]}]).map(t=>({...t,slots:(t.slots||[]).map(s=>({...s}))})) });
+      tage:(v.tage||[{id:crypto.randomUUID(),label:'Tag 1',slots:[]}]).map(t=>({...t,slots:(t.slots||[]).map(s=>({...s}))})) });
     setSelTag(0); setModal({ mode:'edit', id:v.id });
   };
 
   // ── Einzel slot helpers ──
-  const mkSlot = () => { const g=ma.gruppen[0]; if(!g)return null; const d=(g.dienste||[])[0]; return {id:genId(),gruppeId:g.id,dienstId:d?.id||'',count:1}; };
+  const mkSlot = () => { const g=ma.gruppen[0]; if(!g)return null; const d=(g.dienste||[])[0]; return {id:crypto.randomUUID(),gruppeId:g.id,dienstId:d?.id||'',count:1}; };
   const addSlot    = () => { const s=mkSlot(); if(s) setForm(f=>({...f,slots:[...f.slots,s]})); };
   const updSlot    = (sid,k,v) => setForm(f=>({...f,slots:f.slots.map(s=>s.id===sid?{...s,[k]:v}:s)}));
   const remSlot    = sid => setForm(f=>({...f,slots:f.slots.filter(s=>s.id!==sid)}));
 
   // ── Zeitraum tag/slot helpers ──
-  const addTag     = () => { const idx=form.tage.length; setForm(f=>({...f,tage:[...f.tage,{id:genId(),label:`Tag ${idx+1}`,slots:[]}]})); setSelTag(idx); };
+  const addTag     = () => { const idx=form.tage.length; setForm(f=>({...f,tage:[...f.tage,{id:crypto.randomUUID(),label:`Tag ${idx+1}`,slots:[]}]})); setSelTag(idx); };
   const remTag     = i  => { setForm(f=>({...f,tage:f.tage.filter((_,j)=>j!==i)})); setSelTag(p=>Math.max(0,p-1)); };
   const updTagLabel= (i,lbl) => setForm(f=>({...f,tage:f.tage.map((t,j)=>j===i?{...t,label:lbl}:t)}));
   const addTagSlot = () => { const s=mkSlot(); if(!s)return; setForm(f=>({...f,tage:f.tage.map((t,i)=>i===selTag?{...t,slots:[...t.slots,s]}:t)})); };
@@ -1281,7 +1282,7 @@ const VorlagenView = ({ ma, onChange, toast }) => {
       ? { name:form.name.trim(), art:'zeitraum', tage:form.tage, slots:[] }
       : { name:form.name.trim(), art:'einzel',   slots:form.slots, tage:[] };
     if (modal==='add') {
-      onChange(m=>({ ...m, vorlagen:[...m.vorlagen,{id:genId(),...data}] }));
+      onChange(m=>({ ...m, vorlagen:[...m.vorlagen,{id:crypto.randomUUID(),...data}] }));
       toast('Vorlage erstellt');
     } else {
       onChange(m=>({ ...m, vorlagen:m.vorlagen.map(v=>v.id===modal.id?{...v,...data}:v) }));
@@ -1581,7 +1582,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       let updates = {...m, schichten:newSchichten};
       if(hasNo && !hasYes && abfrageModal.datum) {
         const existingAbw=(m.abwesenheiten||[]).filter(a=>!(a.personId===myPerson.id&&a.from===abfrageModal.datum&&(a.reason||'').startsWith('Abfrage')));
-        updates.abwesenheiten=[...existingAbw,{id:genId(),personId:myPerson.id,from:abfrageModal.datum,to:abfrageModal.datum,reason:'Abfrage: '+(abfrageModal.titel||abfrageModal.datum)}];
+        updates.abwesenheiten=[...existingAbw,{id:crypto.randomUUID(),personId:myPerson.id,from:abfrageModal.datum,to:abfrageModal.datum,reason:'Abfrage: '+(abfrageModal.titel||abfrageModal.datum)}];
       } else if(hasYes) {
         updates.abwesenheiten=(m.abwesenheiten||[]).filter(a=>!(a.personId===myPerson.id&&a.from===abfrageModal.datum&&(a.reason||'').startsWith('Abfrage')));
       }
@@ -1612,7 +1613,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const toggleBulkSel = id => setBulkSel(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
   const createBulkAbfrage = () => {
     if (!onChange || bulkSel.size===0) return;
-    const t = genId().slice(0,8);
+    const t = crypto.randomUUID().slice(0,8);
     onChange(m=>({...m, schichten:m.schichten.map(s=>bulkSel.has(s.id)?{...s,abfrageToken:t}:s)}));
     setBulkToken(t);
     toast(`Abfrage für ${bulkSel.size} Schicht${bulkSel.size!==1?'en':''} erstellt 📋`);
@@ -1626,7 +1627,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
 
   const createPlan = () => {
     if (!planForm.name.trim()) return;
-    const neu = {id:genId(), name:planForm.name.trim(), erstelltAm:today()};
+    const neu = {id:crypto.randomUUID(), name:planForm.name.trim(), erstelltAm:today()};
     onChange(m=>({...m, plaene:[...(m.plaene||[]),neu]}));
     setSelPlanId(neu.id); setPlanModal(null); toast('Plan erstellt');
   };
@@ -1647,7 +1648,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   // ── Tausch helpers ──
   const submitTausch = () => {
     if (!myPerson||!tauschSlot||!selSchicht) return;
-    const req = { id:genId(), schichtId:selSchicht.id, slotId:tauschSlot.slotId, isSecond:tauschSlot.isSecond, personId:myPerson.id, note:tauschNote.trim(), createdAt:new Date().toISOString() };
+    const req = { id:crypto.randomUUID(), schichtId:selSchicht.id, slotId:tauschSlot.slotId, isSecond:tauschSlot.isSecond, personId:myPerson.id, note:tauschNote.trim(), createdAt:new Date().toISOString() };
     onTausch(m=>({ ...m, tauschAnfragen:[...(m.tauschAnfragen||[]),req] }));
     setTauschSlot(null); setTauschNote(''); setModal('detail_view');
     toast('Tausch-Anfrage gestellt 🔄');
@@ -1697,10 +1698,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     }
     if (!dates.length) return 0;
     const copies = dates.map(datum => ({
-      id: genId(),
+      id: crypto.randomUUID(),
       datum,
       titel: baseSchicht.titel,
-      slots: baseSchicht.slots.map(sl=>({...sl, id:genId(), personId:'', personId2:''})),
+      slots: baseSchicht.slots.map(sl=>({...sl, id:crypto.randomUUID(), personId:'', personId2:''})),
       wuensche: [],
       veroeffentlicht: false,
       planId: baseSchicht.planId||'',
@@ -1720,9 +1721,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         const titel = [createForm.titel.trim(), tag.label].filter(Boolean).join(' – ');
         const slots = (tag.slots||[]).flatMap(s=>{
           const cnt = s.count || 1;
-          return Array.from({length:cnt},()=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:false,personId:'',personId2:''}));
+          return Array.from({length:cnt},()=>({id:crypto.randomUUID(),gruppeId:s.gruppeId,dienstId:s.dienstId,doppelt:false,personId:'',personId2:''}));
         });
-        return {id:genId(),datum,titel,slots,wuensche:[],veroeffentlicht:false,planId:selPlanId==='all'?'':selPlanId};
+        return {id:crypto.randomUUID(),datum,titel,slots,wuensche:[],veroeffentlicht:false,planId:selPlanId==='all'?'':selPlanId};
       });
       onChange(m=>({...m,schichten:[...m.schichten,...newSchichten]}));
       if(newSchichten[0]){setSelSchichtId(newSchichten[0].id);setView('detail');}
@@ -1731,10 +1732,10 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     }
     const slots = vorlage ? (vorlage.slots||[]).flatMap(s=>{
       const cnt = s.count || 1;
-      return Array.from({length:cnt},()=>({ id:genId(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:false, personId:'', personId2:'' }));
+      return Array.from({length:cnt},()=>({ id:crypto.randomUUID(), gruppeId:s.gruppeId, dienstId:s.dienstId, doppelt:false, personId:'', personId2:'' }));
     }) : [];
     const recurringMeta = recur.enabled && recur.until ? { type:recur.type, until:recur.until } : undefined;
-    const neu = { id:genId(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId, ...(recurringMeta?{recurring:recurringMeta}:{}) };
+    const neu = { id:crypto.randomUUID(), datum:createForm.datum, titel:createForm.titel.trim(), slots, wuensche:[], veroeffentlicht:false, planId:selPlanId==='all'?'':selPlanId, ...(recurringMeta?{recurring:recurringMeta}:{}) };
     onChange(m => ({ ...m, schichten:[...m.schichten, neu] }));
     setSelSchichtId(neu.id); setView('detail'); setModal(null);
     if (recur.enabled && recur.until) {
@@ -1749,8 +1750,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const dupSchicht = () => {
     if (!dupModal||!dupDate) return;
     const s = dupModal;
-    const copy = { ...s, id:genId(), datum:dupDate, wuensche:[], abfrageToken:'', veroeffentlicht:false,
-      slots:s.slots.map(sl=>({...sl,id:genId(),personId:'',personId2:''})) };
+    const copy = { ...s, id:crypto.randomUUID(), datum:dupDate, wuensche:[], abfrageToken:'', veroeffentlicht:false,
+      slots:s.slots.map(sl=>({...sl,id:crypto.randomUUID(),personId:'',personId2:''})) };
     onChange(m=>({...m,schichten:[...m.schichten,copy]}));
     setDupModal(null); setDupDate(''); toast('Schicht dupliziert ✓');
   };
@@ -1758,8 +1759,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
   const saveAsVorlage = () => {
     if (!selSchicht||!onChange) return;
     const name = selSchicht.titel || fmtDe(selSchicht.datum);
-    const v = { id:genId(), name, art:'einzel',
-      slots:selSchicht.slots.map(sl=>({id:genId(),gruppeId:sl.gruppeId,dienstId:sl.dienstId,doppelt:sl.doppelt||false})) };
+    const v = { id:crypto.randomUUID(), name, art:'einzel',
+      slots:selSchicht.slots.map(sl=>({id:crypto.randomUUID(),gruppeId:sl.gruppeId,dienstId:sl.dienstId,doppelt:sl.doppelt||false})) };
     onChange(m=>({...m,vorlagen:[...m.vorlagen,v]}));
     toast('Vorlage "'+name+'" erstellt ✓');
   };
@@ -1830,7 +1831,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
     if (!selSchicht) return;
     const g = ma.gruppen[0]; if (!g) return;
     const d = (g.dienste||[])[0];
-    updateSchicht(selSchicht.id, s => ({ ...s, slots:[...s.slots, { id:genId(), gruppeId:g.id, dienstId:d?.id||'', doppelt:false, personId:'', personId2:'' }] }));
+    updateSchicht(selSchicht.id, s => ({ ...s, slots:[...s.slots, { id:crypto.randomUUID(), gruppeId:g.id, dienstId:d?.id||'', doppelt:false, personId:'', personId2:'' }] }));
     toast('Slot hinzugefügt');
   };
 
@@ -2509,7 +2510,7 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
         </button>
         {onChange && !allowedGroups && (
           <button onClick={()=>{
-            if (!selSchicht.abfrageToken) { const t=genId().slice(0,8); updateSchicht(selSchicht.id,{abfrageToken:t}); toast('Abfrage-Link generiert'); }
+            if (!selSchicht.abfrageToken) { const t=crypto.randomUUID().slice(0,8); updateSchicht(selSchicht.id,{abfrageToken:t}); toast('Abfrage-Link generiert'); }
             setModal('abfrage_link');
           }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
             style={{background:'rgba(99,102,241,0.15)',color:'#818cf8'}}>
@@ -2820,8 +2821,8 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
       {modal==='applyvorlage' && selSchicht && (() => {
         const v = (ma.vorlagen||[]).find(x=>x.id===vorlageApply.vorlageId);
         const previewSlots = v ? (v.art==='mehrtagig'
-          ? (v.tage||[]).flatMap(t=>(t.slots||[]).flatMap(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return Array.from({length:s.count||1},()=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId||d?.id||'',doppelt:false,personId:'',personId2:''})); }))
-          : (v.slots||[]).flatMap(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return Array.from({length:s.count||1},()=>({id:genId(),gruppeId:s.gruppeId,dienstId:s.dienstId||d?.id||'',doppelt:false,personId:'',personId2:''})); })
+          ? (v.tage||[]).flatMap(t=>(t.slots||[]).flatMap(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return Array.from({length:s.count||1},()=>({id:crypto.randomUUID(),gruppeId:s.gruppeId,dienstId:s.dienstId||d?.id||'',doppelt:false,personId:'',personId2:''})); }))
+          : (v.slots||[]).flatMap(s=>{ const g=ma.gruppen.find(x=>x.id===s.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===s.dienstId);return Array.from({length:s.count||1},()=>({id:crypto.randomUUID(),gruppeId:s.gruppeId,dienstId:s.dienstId||d?.id||'',doppelt:false,personId:'',personId2:''})); })
         ) : [];
         return (
           <Modal title="Vorlage anwenden" onClose={()=>setModal(null)}>
@@ -2955,9 +2956,9 @@ const DienstplanView = ({ ma, onChange, onTausch, toast, allowedGroups, currentU
               </button>
               <button onClick={()=>{
                 const rows = shareScope==='single'&&selSchicht
-                  ? selSchicht.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')
-                  : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>`<tr><td colspan="4" style="background:#f1f5f9;font-weight:700;padding:10px 12px">${fmtDe(s.datum)}${s.titel?' — '+s.titel:''}</td></tr>`+s.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${g?.name||''}</td><td>${d?.name||''}</td><td>${p1?.name||'—'}</td><td>${p2?.name||''}</td></tr>`;}).join('')).join('');
-                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#000000}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#000000;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(fmtDe(selSchicht.datum)+(selSchicht.titel?' — '+selSchicht.titel:'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`;
+                  ? selSchicht.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${esc(g?.name)}</td><td>${esc(d?.name)}</td><td>${esc(p1?.name||'—')}</td><td>${esc(p2?.name)}</td></tr>`;}).join('')
+                  : [...ma.schichten].sort((a,b)=>a.datum.localeCompare(b.datum)).map(s=>`<tr><td colspan="4" style="background:#f1f5f9;font-weight:700;padding:10px 12px">${esc(fmtDe(s.datum))}${s.titel?' — '+esc(s.titel):''}</td></tr>`+s.slots.map(sl=>{const g=ma.gruppen.find(x=>x.id===sl.gruppeId);const d=(g?.dienste||[]).find(x=>x.id===sl.dienstId);const p1=ma.personen.find(x=>x.id===sl.personId);const p2=sl.doppelt?ma.personen.find(x=>x.id===sl.personId2):null;return `<tr><td>${esc(g?.name)}</td><td>${esc(d?.name)}</td><td>${esc(p1?.name||'—')}</td><td>${esc(p2?.name)}</td></tr>`;}).join('')).join('');
+                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dienstplan</title><style>body{font-family:system-ui,sans-serif;margin:32px;color:#000000}h2{font-size:1.2rem;font-weight:800;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;background:#000000;color:#fff;font-weight:600}td{padding:8px 12px;border-bottom:1px solid #e2e8f0}tr:hover td{background:#f8fafc}@media print{button{display:none}}</style></head><body><h2>${shareScope==='single'&&selSchicht?(esc(fmtDe(selSchicht.datum))+(selSchicht.titel?' — '+esc(selSchicht.titel):'')):'Dienstplan'}</h2><table><thead><tr><th>Gruppe</th><th>Dienst</th><th>Person 1</th><th>Person 2</th></tr></thead><tbody>${rows}</tbody></table><br/><button onclick="window.print()" style="padding:10px 24px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700">Drucken / Als PDF speichern</button></body></html>`;
                 const w = window.open('','_blank','width=800,height=600');
                 if (w) { w.document.write(html); w.document.close(); }
                 else {
@@ -3713,6 +3714,26 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile, onInvite 
         {currentUser?.role==='owner' && <p className="text-xs text-slate-400 mt-2">Admin-PIN ist fest eingestellt.</p>}
       </div>
 
+      {/* Datenschutz-Widerruf & Account-Löschung */}
+      <div className="glass rounded-2xl p-5 space-y-2">
+        <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">Datenschutz</p>
+        <button onClick={()=>{localStorage.removeItem('k21-dsgvo-'+(currentUser?.id||''));window.location.reload();}}
+          className="w-full py-2.5 text-sm font-semibold transition-all"
+          style={{borderRadius:12,background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.25)',color:'#b45309'}}>
+          Datenschutz-Einwilligung widerrufen
+        </button>
+        <button onClick={async ()=>{
+          if(!confirm('Möchtest du deinen Account wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+          await aFetch('/api/me',{method:'DELETE'}).catch(()=>{});
+          sessionStorage.clear();
+          window.location.reload();
+        }}
+          className="w-full py-2.5 text-sm font-semibold transition-all"
+          style={{borderRadius:12,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',color:'#dc2626'}}>
+          Account löschen
+        </button>
+      </div>
+
       {/* Info hint */}
       <div className="glass rounded-2xl px-4 py-3 flex items-start gap-2.5" style={{borderColor:'rgba(16,185,129,0.2)',background:'rgba(16,185,129,0.04)'}}>
         <SI p={IC.lock} size={13} stroke={2} className="text-emerald-500 mt-0.5 flex-shrink-0" style={{color:'#10b981',marginTop:2}}/>
@@ -4109,27 +4130,21 @@ const AbfrageForm = ({ token }) => {
 
   useEffect(() => {
     const search = async () => {
-      let activeProfiles = PROFILES;
+      // Öffentliche Seite ohne Login → über Server-Proxy laden (nicht per Client-Firestore,
+      // dessen Rules für anonyme Besucher gesperrt sind).
       try {
-        const cfgSnap = await adb.collection('config').doc('profiles').get();
-        const cfgData = cfgSnap.data()?.data;
-        if (cfgData && cfgData.length) activeProfiles = cfgData;
-      } catch(e) { console.warn('AbfrageForm: profiles load error:', e.message); }
-      // Personen leben im shared/ma-Dokument (nicht pro Profil)
-      let personen = [];
-      try {
-        const shSnap = await adb.collection('shared').doc('ma').get();
-        personen = shSnap.data()?.data?.personen || [];
-      } catch(e) { console.warn('AbfrageForm: shared load error:', e.message); }
-      for (const pr of activeProfiles) {
-        try {
-          const snap = await adb.collection(pr.id).doc('ma').get();
-          const d = snap.data()?.data;   // ma-Nutzdaten liegen unter .data
-          const list = (d?.schichten||[]).filter(s=>s.abfrageToken===token)
-                                          .sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
-          if (list.length) { setSchichten(list); setMaData({ ...d, personen }); setPid(''); return; }
-        } catch(e) { console.warn('AbfrageForm: profile read error:', pr.id, e.message); }
-      }
+        const r = await fetch('/api/abfrage?token=' + encodeURIComponent(token));
+        if (r.ok) {
+          const d = await r.json();
+          const list = (d.schichten || []).sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+          if (list.length) {
+            setSchichten(list);
+            setMaData({ gruppen: d.gruppen || [], personen: d.personen || [] });
+            setPid('');
+            return;
+          }
+        }
+      } catch(e) { console.warn('AbfrageForm load error:', e.message); }
       setErr('Abfrage nicht gefunden oder bereits abgelaufen.');
     };
     search();
@@ -4386,7 +4401,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
         ? [es.person.domainAttributes.firstName, es.person.domainAttributes.lastName].filter(Boolean).join(' ')
         : null;
       return {
-        id: genId(),
+        id: crypto.randomUUID(),
         gruppeId: sgMapping?.maGruppeId||'',
         label: labelOverrides[String(es.serviceId)] || svc?.name || 'Dienst',
         personId: ctPersonIds[String(es.personId)]||'',
@@ -4430,7 +4445,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
     const {targetProfId, ctEventId, ...rest} = previewSchicht;
     // Strip internal display-only fields from slots before saving
     const cleanSlots = (rest.slots||[]).map(({_ctPersonId,_ctPersonName,...s})=>s);
-    const schicht = {...rest, slots:cleanSlots, id:genId(), veroeffentlicht:false, wuensche:[], tauschAnfragen:[]};
+    const schicht = {...rest, slots:cleanSlots, id:crypto.randomUUID(), veroeffentlicht:false, wuensche:[], tauschAnfragen:[]};
     const evId = ctEventId;
 
     if(writeMaForProfile && targetProfId && targetProfId!==profile) {
@@ -4450,7 +4465,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
   // Update a slot field in the preview modal
   const updPreviewSlot = (slotId, patch) => setPreviewSchicht(ps=>({...ps, slots:ps.slots.map(s=>s.id===slotId?{...s,...patch}:s)}));
   const removePreviewSlot = slotId => setPreviewSchicht(ps=>({...ps, slots:ps.slots.filter(s=>s.id!==slotId)}));
-  const addPreviewSlot = () => setPreviewSchicht(ps=>({...ps, slots:[...(ps.slots||[]),{id:genId(),label:'',gruppeId:'',personId:''}]}));
+  const addPreviewSlot = () => setPreviewSchicht(ps=>({...ps, slots:[...(ps.slots||[]),{id:crypto.randomUUID(),label:'',gruppeId:'',personId:''}]}));
 
   // Open bulk-import settings modal
   const openBulkImport = () => {
@@ -4492,7 +4507,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
         const eventServices = detail?.eventServices || [];
         const slots = buildSlots(eventServices, mapping).map(({_ctPersonId,_ctPersonName,...s})=>s);
         const schicht = {
-          id:genId(),
+          id:crypto.randomUUID(),
           datum: overrides.datum||ev.startDate?.slice(0,10)||'',
           titel: overrides.titel||ev.name||'Event',
           zeit: overrides.zeit||evTimes(ev),
@@ -4536,7 +4551,7 @@ const CTView = ({ ma, onChange, onChangeShared, profiles, profile, writeMaForPro
     if(!importModal) return;
     const p = importModal;
     const name = [p.firstName,p.lastName].filter(Boolean).join(' ');
-    const newId = genId();
+    const newId = crypto.randomUUID();
     const newPerson = { id:newId, name, ctPersonId:String(p.id), gruppenIds:impForm.gruppenIds, farbe:'#8b5cf6', email:p.email||'' };
 
     // Add to shared personen
@@ -5294,7 +5309,7 @@ const DsgvoConsent = ({ appName, onAccept }) => (
         <div style={{background:'rgba(0,0,0,0.04)',borderRadius:12,padding:'14px 16px',fontSize:12,color:'#475569',display:'flex',flexDirection:'column',gap:8}}>
           <div><strong>Verantwortliche:</strong> Revive K21 – interne Gemeindeverwaltung</div>
           <div><strong>Verarbeitete Daten:</strong> Name, Rolle, PIN (bcrypt-verschlüsselt), Dienstplandaten, Verfügbarkeiten, ChurchTools-Synchronisierungsdaten.</div>
-          <div><strong>Zweck &amp; Rechtsgrundlage:</strong> Interne Dienstplanung der Gemeinde · Art. 6 Abs. 1 lit. a DSGVO (Einwilligung).</div>
+          <div><strong>Zweck &amp; Rechtsgrundlage:</strong> Interne Dienstplanung der Gemeinde · Art. 6 Abs. 1 lit. a DSGVO (Einwilligung). Soweit dabei besondere Kategorien personenbezogener Daten (Art. 9 DSGVO) verarbeitet werden, erfolgt dies auf Basis Ihrer ausdrücklichen Einwilligung.</div>
           <div><strong>Speicherort:</strong> Google Firebase &amp; ChurchTools, Rechenzentrum EU/EWR · beide Anbieter als Auftragsverarbeiter gem. Art. 28 DSGVO.</div>
           <div><strong>Speicherdauer:</strong> Solange du aktives Mitglied bist; auf Wunsch jederzeit löschbar.</div>
           <div><strong>Deine Rechte:</strong> Auskunft, Berichtigung, Löschung, Widerspruch – wende dich an die Gemeindeleitung oder den App-Admin.</div>
@@ -5696,7 +5711,7 @@ const App = () => {
   const curProfile  = profiles.find(pp=>pp.id===profile) || profiles[profiles.length-1] || GESAMT_PROFILE;
 
   const toast = (msg, type='success') => {
-    const id = genId();
+    const id = crypto.randomUUID();
     setToasts(pp=>[...pp, { id, msg, type }]);
     setTimeout(() => setToasts(pp=>pp.filter(t=>t.id!==id)), 3000);
   };

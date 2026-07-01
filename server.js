@@ -263,6 +263,29 @@ app.post('/api/ma', authMiddleware, async (req, res) => {
 // body: { token, personId, form: {slotId: 'wunschdienst'|'neutral'|'wunschfrei'} }
 // Schreibt serverseitig (Proxy umgeht Security-Rules) – kein Login nötig.
 const ABFRAGE_FALLBACK_PROFILES = [{ id:'wunstorf' }, { id:'schaumburg' }, { id:'revive' }];
+
+// GET /api/abfrage?token=XYZ  (öffentlich – lädt die Abfrage-Seite ohne Login)
+// Liefert alle Schichten unter dem Token + Gruppen (fürs Rendern) + Personen (shared).
+// Läuft über den Server-Proxy, unabhängig von Client-Firestore-Rules.
+app.get('/api/abfrage', async (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: 'missing token' });
+  const cfg = await fsGetDoc('config', 'profiles');
+  const profiles = (cfg?.data && cfg.data.length) ? cfg.data : ABFRAGE_FALLBACK_PROFILES;
+  const shared = await fsGetDoc('shared', 'ma');
+  const personen = shared?.data?.personen || [];
+  for (const pr of profiles) {
+    const doc = await fsGetDoc(pr.id, 'ma');
+    const d = doc?.data;
+    const list = (d?.schichten || []).filter(s => s.abfrageToken === token);
+    if (list.length) {
+      list.sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+      return res.json({ schichten: list, gruppen: d.gruppen || [], personen, profile: pr.id });
+    }
+  }
+  res.status(404).json({ error: 'Abfrage nicht gefunden' });
+});
+
 app.post('/api/abfrage', rateLimit(60_000, 30), async (req, res) => {
   const { token, personId, form } = req.body || {};
   if (!token || !personId || !form || typeof form !== 'object')
@@ -459,6 +482,18 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Self-delete: authenticated user deletes their own account
+app.delete('/api/me', authMiddleware, async (req, res) => {
+  try {
+    const id = req.user?.id;
+    if (!id || id === 'admin') return res.status(400).json({ error: 'Account kann nicht gelöscht werden' });
+    await fsDelete('k21-users', id);
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Löschen fehlgeschlagen' });
+  }
+});
+
 // Patch single field — uses Firestore updateMask so other fields are preserved
 app.post('/api/users/:id/consent', authMiddleware, async (req, res) => {
   const col = validCol(req.query.c, 'k21-users');
@@ -616,7 +651,7 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
   if (!compiledHtml) { res.status(503).send('Wird gestartet…'); return; }
   let html = compiledHtml.replace('"__FIREBASE_CONFIG__"', firebaseConfig);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
