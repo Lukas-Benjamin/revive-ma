@@ -156,12 +156,14 @@ async function fsGetCollection(col) {
   } catch(e) { console.warn('fsGetCollection error:', e.message); return null; }
 }
 
-async function fsSet(col, docId, data) {
+async function fsSet(col, docId, data, fieldMasks = null) {
   try {
     const token = await getToken();
     const fields = Object.fromEntries(Object.entries(data).map(([k,v])=>[k,toFsValue(v)]));
     if (docId) {
-      await fetch(fsUrl(col,docId),{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({fields})});
+      const maskQ = fieldMasks ? fieldMasks.map(f=>`updateMask.fieldPaths=${encodeURIComponent(f)}`).join('&') : '';
+      const url = fsUrl(col,docId) + (maskQ ? '?'+maskQ : '');
+      await fetch(url,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({fields})});
     } else {
       const r = await fetch(fsUrl(col),{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({fields})});
       const d = await r.json(); return d.name?.split('/').pop();
@@ -241,6 +243,53 @@ app.post('/api/ma', authMiddleware, async (req, res) => {
   res.json({ok:true});
 });
 
+// POST /api/abfrage  (öffentlich – Mitarbeiter-Verfügbarkeit via Abfrage-Link)
+// body: { token, personId, form: {slotId: 'wunschdienst'|'neutral'|'wunschfrei'} }
+// Schreibt serverseitig (Proxy umgeht Security-Rules) – kein Login nötig.
+const ABFRAGE_FALLBACK_PROFILES = [{ id:'wunstorf' }, { id:'schaumburg' }, { id:'revive' }];
+app.post('/api/abfrage', rateLimit(60_000, 30), async (req, res) => {
+  const { token, personId, form } = req.body || {};
+  if (!token || !personId || !form || typeof form !== 'object')
+    return res.status(400).json({ error: 'missing fields' });
+
+  const cfg = await fsGetDoc('config', 'profiles');
+  const profiles = (cfg?.data && cfg.data.length) ? cfg.data : ABFRAGE_FALLBACK_PROFILES;
+
+  const wishes = Object.entries(form)
+    .filter(([, v]) => v && v !== 'neutral')
+    .map(([slotId, art]) => ({ personId, slotId, art }));
+  const entries = Object.values(form).filter(v => v && v !== 'neutral');
+  const hasYes = entries.includes('wunschdienst');
+  const hasNo  = entries.includes('wunschfrei');
+
+  for (const pr of profiles) {
+    const doc = await fsGetDoc(pr.id, 'ma');
+    const d = doc?.data;
+    const schicht = (d?.schichten || []).find(s => s.abfrageToken === token);
+    if (!schicht) continue;
+
+    const newSchichten = d.schichten.map(s =>
+      s.abfrageToken !== token ? s
+        : { ...s, wuensche: [...(s.wuensche || []).filter(w => w.personId !== personId), ...wishes] });
+    const next = { ...d, schichten: newSchichten };
+
+    if (hasNo && !hasYes && schicht.datum) {
+      const keep = (d.abwesenheiten || []).filter(a => !(a.personId === personId && a.from === schicht.datum && (a.reason || '').startsWith('Abfrage')));
+      next.abwesenheiten = [...keep, {
+        id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+        personId, from: schicht.datum, to: schicht.datum,
+        reason: 'Abfrage: ' + (schicht.titel || schicht.datum),
+      }];
+    } else if (hasYes) {
+      next.abwesenheiten = (d.abwesenheiten || []).filter(a => !(a.personId === personId && a.from === schicht.datum && (a.reason || '').startsWith('Abfrage')));
+    }
+
+    await fsSet(pr.id, 'ma', { data: next });
+    return res.json({ ok: true });
+  }
+  res.status(404).json({ error: 'Abfrage nicht gefunden' });
+});
+
 // GET  /api/shared-ma   → read shared/ma doc
 app.get('/api/shared-ma', async (req, res) => {
   const doc = await fsGetDoc('shared', 'ma');
@@ -263,7 +312,7 @@ const CT_BASE  = process.env.CT_BASE_URL || 'https://k21.church.tools';
 const CT_TOKEN = process.env.CT_TOKEN    || '';
 if (!CT_TOKEN) console.warn('⚠ CT_TOKEN fehlt in .env – ChurchTools-Proxy wird nicht funktionieren');
 
-app.get('/api/ct/*', rateLimit(60_000, 60), async (req, res) => {
+app.get('/api/ct/*', authMiddleware, rateLimit(60_000, 60), async (req, res) => {
   try {
     const ctPath = req.params[0];
     const qs     = new URLSearchParams(req.query).toString();
@@ -291,13 +340,15 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
   if (!name || !pin) return res.status(400).json({ error: 'Name und PIN erforderlich' });
   const col = collection || 'k21-users';
 
+  const lockMins = await checkLock(name);
+  if (lockMins) return res.status(429).json({ error: `Zu viele Fehlversuche – bitte ${lockMins} Min. warten` });
+
   // ── Admin login ──────────────────────────────────────────────────────────
   const adminDoc = await fsGetDoc('config', 'auth');
   const adminName = adminDoc?.adminName || 'Admin';
   if (name.toLowerCase() === adminName.toLowerCase()) {
     const adminHash = adminDoc?.adminPinHash;
     const adminPin  = adminDoc?.adminPin; // legacy plaintext
-    const DEFAULT_OWNER_PIN = 'K21ADMIN'; // original hardcoded fallback
     let ok = false;
     if (adminHash) {
       ok = await bcrypt.compare(String(pin), adminHash);
@@ -308,10 +359,11 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
         await fsSet('config', 'auth', { ...adminDoc, adminPinHash: hash, adminPin: null });
       }
     } else {
-      // No PIN configured yet — accept the default hardcoded owner PIN
-      ok = String(pin) === DEFAULT_OWNER_PIN;
+      // No PIN configured yet (first run) — allow access to set one
+      ok = true;
     }
-    if (!ok) return res.status(401).json({ error: 'Falscher PIN' });
+    if (!ok) { await recordFail(name); return res.status(401).json({ error: 'Falscher PIN' }); }
+    await resetLock(name);
     return res.json({ ok: true, role: 'admin', name: adminName, token: createSession({ id: 'admin', name: adminName, role: 'admin' }) });
   }
 
@@ -319,20 +371,20 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
   const users = await fsGetCollection(col);
   if (users === null) return res.status(503).json({ error: 'Firestore nicht erreichbar' });
   const user = users.find(u => u.name?.toLowerCase() === name.toLowerCase());
-  if (!user) return res.status(401).json({ error: 'Unbekannter Benutzer' });
+  if (!user) { await recordFail(name); return res.status(401).json({ error: 'Unbekannter Benutzer' }); }
 
   let ok = false;
   if (user.pinHash) {
     ok = await bcrypt.compare(String(pin), user.pinHash);
   } else if (user.pin) {
-    // Legacy plaintext — compare then migrate
     ok = String(pin) === String(user.pin);
     if (ok) {
       const hash = await bcrypt.hash(String(user.pin), SALT_ROUNDS);
       await fsSet(col, user.id, { ...user, pinHash: hash, pin: null });
     }
   }
-  if (!ok) return res.status(401).json({ error: 'Falscher PIN' });
+  if (!ok) { await recordFail(name); return res.status(401).json({ error: 'Falscher PIN' }); }
+  await resetLock(name);
   return res.json({
     ok: true,
     role: user.role || 'user',
@@ -351,11 +403,10 @@ app.post('/api/login', rateLimit(60_000, 10), async (req, res) => {
 app.post('/api/logout', (req, res) => res.json({ ok: true }));
 
 // Admin-only: list users (names only, no hashes)
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authMiddleware, async (req, res) => {
   const col = req.query.c || 'k21-users';
   const users = await fsGetCollection(col);
   if (users === null) return res.status(503).json({ error: 'Firestore nicht erreichbar' });
-  // Strip PIN fields before sending
   res.json(users.map(({ pin: _p, pinHash: _h, ...rest }) => rest));
 });
 
@@ -380,6 +431,13 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
 app.delete('/api/users/:id', authMiddleware, async (req, res) => {
   const col = req.query.c || 'k21-users';
   await fsDelete(col, req.params.id);
+  res.json({ ok: true });
+});
+
+// Patch single field — uses Firestore updateMask so other fields are preserved
+app.post('/api/users/:id/consent', authMiddleware, async (req, res) => {
+  const col = req.query.c || 'k21-users';
+  await fsSet(col, req.params.id, { dsgvoConsent: true }, ['dsgvoConsent']);
   res.json({ ok: true });
 });
 
@@ -419,7 +477,7 @@ app.post('/api/change-pin', authMiddleware, async (req, res) => {
       const stored = authDoc.adminPinHash || authDoc.adminPin || null;
       const ok = stored
         ? (stored.startsWith('$2') ? await bcrypt.compare(String(oldPin), stored) : String(oldPin) === stored)
-        : String(oldPin) === 'K21ADMIN';
+        : false; // no bypass — set a PIN first via first-run login
       if (!ok) return res.status(401).json({ error: 'Alter PIN ist nicht korrekt' });
       await fsSet('config', 'auth', { ...authDoc, adminPinHash: await bcrypt.hash(newStr, SALT_ROUNDS), adminPin: null });
     } else {

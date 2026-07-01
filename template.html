@@ -490,15 +490,18 @@ const PersonenView = ({ ma, onChange, toast, profile, allowedGroups }) => {
     }
 
     // 2. Sync login profile to k21-users if PIN provided
+    // Use server endpoint so PIN gets bcrypt-hashed (direct Firestore write would store plaintext)
     const pinVal = form.pin.trim();
     if (pinVal) {
-      const loginData = { pin:pinVal, role:form.role, areaAccess:form.areaAccess||{}, areaGroups:form.areaGroups||{}, permissions:{} };
+      const loginData = { name, pin:pinVal, role:form.role, areaAccess:form.areaAccess||{}, areaGroups:form.areaGroups||{}, permissions:{} };
       try {
         const existing = findLogin(name);
         if (existing) {
-          await adb.collection('k21-users').doc(existing.id).update({ name, ...loginData });
+          await writeFetch(`/api/users/${existing.id}?c=k21-users`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(loginData)});
+          const { pin:_p, ...rest } = loginData;
+          adb.collection('k21-users').doc(existing.id).update(rest).catch(()=>{});
         } else {
-          await adb.collection('k21-users').add({ name, ...loginData, createdAt:new Date().toISOString() });
+          await writeFetch('/api/users?c=k21-users', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...loginData, createdAt:new Date().toISOString()})});
         }
       } catch(e) {
         toast('Login-Sync fehlgeschlagen – bitte nochmal speichern', 'error');
@@ -3281,7 +3284,7 @@ const Toggle = ({ label, hint, value, onChange }) => (
 
 // EINSTELLUNGEN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin, appSettings, saveAppSettings, currentUser, onUpdateUser, initialTab }) => {
+const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profiles, setProfiles, isAdmin, appSettings, saveAppSettings, currentUser, onUpdateUser, initialTab, onInvite }) => {
   const [tab, setTab] = useState(initialTab || 'allgemein');
   useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   const TABS = [
@@ -3429,7 +3432,7 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
           </div>
         )}
 
-        {tab==='profile' && <ProfilesView currentUser={currentUser} onUpdateUser={onUpdateUser} ma={ma} currentProfile={profile}/>}
+        {tab==='profile' && <ProfilesView currentUser={currentUser} onUpdateUser={onUpdateUser} ma={ma} currentProfile={profile} onInvite={onInvite}/>}
 
         {tab==='bereiche' && isAdmin && (
           <div className="space-y-3">
@@ -3514,7 +3517,7 @@ const EinstellungenView = ({ ma, onChange, onChangeShared, toast, profile, profi
 // ─── ProfilesView ─────────────────────────────────────────────────────────────
 const INP_P = "w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition-all";
 
-const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
+const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile, onInvite }) => {
   const { confirm: confirmDlg, confirmEl } = useConfirm();
   const [users, setUsers]      = useState([]);
   const [modal, setModal]      = useState(null);
@@ -3527,7 +3530,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
 
   useEffect(() => {
     const unsub = adb.collection('k21-users').onSnapshot(
-      snap => setUsers(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.name.localeCompare(b.name))),
+      snap => setUsers(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||'').localeCompare(b.name||''))),
       ()=>{}
     );
     return ()=>unsub();
@@ -3543,10 +3546,11 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
         await writeFetch(`/api/users/${modal.user.id}?c=k21-users`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
       }
     } catch(e) { console.warn('save user error:', e.message); }
-    // Note: Firestore direct write omits pin so hashes stay server-managed
-    const { pin: _pin, ...dataWithoutPin } = data;
-    if (modal==='add') adb.collection('k21-users').add({...dataWithoutPin,createdAt:new Date().toISOString()}).catch(console.warn);
-    else adb.collection('k21-users').doc(modal.user.id).update(dataWithoutPin).catch(console.warn);
+    // For edit: also update Firestore directly (without pin) to propagate name/role/areaAccess immediately
+    if (modal!=='add') {
+      const { pin: _pin, ...dataWithoutPin } = data;
+      adb.collection('k21-users').doc(modal.user.id).update(dataWithoutPin).catch(console.warn);
+    }
     setModal(null);
   };
 
@@ -3663,7 +3667,7 @@ const ProfilesView = ({ currentUser, onUpdateUser, ma, currentProfile }) => {
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-all">
               <SI p={IC.edit} size={13}/>
             </button>
-            <button title="Einladen" onClick={()=>setInviteUser({id:u.id,name:u.name,email:u.email||''})}
+            <button title="Einladen" onClick={()=>onInvite?.({id:u.id,name:u.name,email:u.email||''})}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/5 hover:bg-blue-50 text-slate-500 hover:text-blue-500 transition-all">
               <SI p={IC.send} size={13}/>
             </button>
@@ -4008,12 +4012,18 @@ const AbfrageForm = ({ token }) => {
         const cfgData = cfgSnap.data()?.data;
         if (cfgData && cfgData.length) activeProfiles = cfgData;
       } catch(e) { console.warn('AbfrageForm: profiles load error:', e.message); }
+      // Personen leben im shared/ma-Dokument (nicht pro Profil)
+      let personen = [];
+      try {
+        const shSnap = await adb.collection('shared').doc('ma').get();
+        personen = shSnap.data()?.data?.personen || [];
+      } catch(e) { console.warn('AbfrageForm: shared load error:', e.message); }
       for (const pr of activeProfiles) {
         try {
           const snap = await adb.collection(pr.id).doc('ma').get();
-          const d = snap.data();
+          const d = snap.data()?.data;   // ma-Nutzdaten liegen unter .data
           const s = (d?.schichten||[]).find(s=>s.abfrageToken===token);
-          if (s) { setSchicht(s); setMaData(d); setPid(''); return; }
+          if (s) { setSchicht(s); setMaData({ ...d, personen }); setPid(''); return; }
         } catch(e) { console.warn('AbfrageForm: profile read error:', pr.id, e.message); }
       }
       setErr('Abfrage nicht gefunden oder bereits abgelaufen.');
@@ -4023,42 +4033,19 @@ const AbfrageForm = ({ token }) => {
 
   const submit = async () => {
     if (!pid) return;
-    const wishes = Object.entries(form).filter(([,v])=>v&&v!=='neutral').map(([slotId,art])=>({personId:pid,slotId,art}));
-    // Check if person said "wunschfrei" for ALL slots → record as abwesenheit
-    const allEntries = Object.values(form).filter(v=>v&&v!=='neutral');
-    const hasYes  = allEntries.some(v=>v==='wunschdienst');
-    const hasNo   = allEntries.some(v=>v==='wunschfrei');
-    let activeProfiles = PROFILES;
+    // Speichern über öffentlichen Server-Endpoint (Proxy umgeht Security-Rules,
+    // findet Profil/Schicht per Token und trägt Wünsche + ggf. Abwesenheit ein).
     try {
-      const cfgSnap = await adb.collection('config').doc('profiles').get();
-      const cfgData = cfgSnap.data()?.data;
-      if (cfgData && cfgData.length) activeProfiles = cfgData;
-    } catch(e) { console.warn('AbfrageForm submit: profiles error:', e.message); }
-    for (const pr of activeProfiles) {
-      try {
-        const snap = await adb.collection(pr.id).doc('ma').get();
-        const d = snap.data();
-        if (!(d?.schichten||[]).find(s=>s.abfrageToken===token)) continue;
-        // 1. Update wuensche in schicht
-        const newSchichten = (d.schichten||[]).map(s => {
-          if (s.abfrageToken!==token) return s;
-          return {...s, wuensche:[...(s.wuensche||[]).filter(w=>w.personId!==pid),...wishes]};
-        });
-        // 2. If person has NO "ja" entries → add abwesenheit for schicht date
-        let updates = { schichten:newSchichten };
-        if (hasNo && !hasYes && schicht?.datum) {
-          const existingAbw = (d.abwesenheiten||[]).filter(a=>!(a.personId===pid&&a.from===schicht.datum&&a.reason?.startsWith('Abfrage')));
-          const newAbw = { id: Math.random().toString(36).slice(2)+Date.now().toString(36), personId:pid, from:schicht.datum, to:schicht.datum, reason:'Abfrage: '+(schicht.titel||schicht.datum) };
-          updates.abwesenheiten = [...existingAbw, newAbw];
-        } else if (hasYes) {
-          // Remove any previous "abwesend wegen Abfrage" for this date + person
-          const filtered = (d.abwesenheiten||[]).filter(a=>!(a.personId===pid&&a.from===schicht?.datum&&a.reason?.startsWith('Abfrage')));
-          updates.abwesenheiten = filtered;
-        }
-        // 3. Also update shared MA (personen/konflikte/praeferenzen live there)
-        await adb.collection(pr.id).doc('ma').update(updates);
-        setDone(true); return;
-      } catch(e) { console.warn('AbfrageForm submit: write error:', pr.id, e.message); }
+      const r = await fetch('/api/abfrage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, personId: pid, form }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      setDone(true);
+    } catch(e) {
+      console.warn('AbfrageForm submit error:', e.message);
+      setErr('Speichern fehlgeschlagen. Bitte später erneut versuchen.');
     }
   };
 
@@ -5745,13 +5732,12 @@ const App = () => {
   const abfrageToken = new URLSearchParams(window.location.search).get('abfrage');
   if (abfrageToken) return <AbfrageForm token={abfrageToken}/>;
   if (inviteToken && currentUser === undefined) return <InviteAcceptScreen token={inviteToken} onAccepted={d=>{ setSessToken(d.token); login({...d, dsgvoConsent:d.dsgvoConsent||false}); window.__INVITE_TOKEN__=null; }}/>;
-  if (currentUser === undefined) return <LoginScreen onLogin={(u) => login({...u, dsgvoConsent: u.dsgvoConsent || (u.id==='admin' && !!localStorage.getItem('k21-dsgvo-admin'))})}/>;
+  if (currentUser === undefined) return <LoginScreen onLogin={(u) => login({...u, dsgvoConsent: u.dsgvoConsent || !!localStorage.getItem('k21-dsgvo-'+u.id)})}/>;
 
   const acceptDsgvo = async () => {
-    if (currentUser.id === 'admin') {
-      localStorage.setItem('k21-dsgvo-admin', '1');
-    } else {
-      await aFetch(`/api/users/${currentUser.id}?c=k21-users`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dsgvoConsent:true}) });
+    localStorage.setItem('k21-dsgvo-'+currentUser.id, '1');
+    if (currentUser.id !== 'admin') {
+      aFetch(`/api/users/${currentUser.id}/consent?c=k21-users`, { method:'POST' }).catch(()=>{});
     }
     login({...currentUser, dsgvoConsent: true});
   };
@@ -5870,7 +5856,7 @@ const App = () => {
         {!isGesamt && page==='vorlagen'         && <VorlagenView       ma={fullMa} onChange={canEdit?updateMa:null} toast={toast}/>}
         {!isGesamt && page==='verfuegbarkeit'   && <ErrorBoundary><VerfuegbarkeitView ma={fullMa} onChange={canEdit?updateSharedMa:null} onChangeMa={canEdit?updateMa:null} toast={toast}/></ErrorBoundary>}
         {!isGesamt && page==='statistik'        && <StatistikView      ma={fullMa} canEdit={canEdit}/>}
-        {!isGesamt && (page==='einstellungen'||page==='profiles') && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin} appSettings={appSettings} saveAppSettings={saveAppSettings} currentUser={currentUser} onUpdateUser={updateCurrentUser} initialTab={page==='profiles'?'profile':'allgemein'}/>}
+        {!isGesamt && (page==='einstellungen'||page==='profiles') && canSettings && <EinstellungenView ma={fullMa} onChange={updateMa} onChangeShared={updateSharedMa} toast={toast} profile={profile} profiles={profiles} setProfiles={setProfiles} isAdmin={isAdmin} appSettings={appSettings} saveAppSettings={saveAppSettings} currentUser={currentUser} onUpdateUser={updateCurrentUser} initialTab={page==='profiles'?'profile':'allgemein'} onInvite={setInviteUser}/>}
         {!isGesamt && page==='churchtools'  && isAdmin      && <ErrorBoundary><CTView ma={fullMa} onChange={canEdit?updateMa:null} onChangeShared={updateSharedMa} profiles={profiles} profile={profile} writeMaForProfile={writeMaForProfile} toast={toast}/></ErrorBoundary>}
       </main>
       {headerEdit && (
